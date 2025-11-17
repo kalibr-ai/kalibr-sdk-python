@@ -56,13 +56,14 @@ def send_event(payload: dict):
     url = os.getenv("KALIBR_COLLECTOR_URL", "http://localhost:8001/api/ingest")
     api_key = os.getenv("KALIBR_API_KEY", "test_key_12345")
 
-    headers = {"Content-Type": "application/x-ndjson", "X-API-Key": api_key}
+    headers = {"Content-Type": "application/json", "X-API-Key": api_key}
 
-    # NDJSON format (single line JSON)
-    body = json.dumps(payload) + "\n"
+    # ✅ Fixed Bug 2: Send as JSON dict instead of NDJSON string
+    # Backend expects: {"events": [event_dict]}
+    body = {"events": [payload]}
 
     try:
-        response = requests.post(url, headers=headers, data=body.encode("utf-8"), timeout=5)
+        response = requests.post(url, headers=headers, json=body, timeout=5)
         if not response.ok:
             print(
                 f"[Kalibr SDK] ❌ Collector rejected event: {response.status_code} - {response.text}"

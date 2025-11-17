@@ -173,20 +173,22 @@ class KalibrClient:
                 log_warning("No valid events in batch")
                 return
 
-            # Create NDJSON payload
-            ndjson = "\n".join([serialize_event(event) for event in valid_events])
-            body = ndjson.encode("utf-8")
+            # ✅ Fixed Bug 2: Send as JSON dict instead of NDJSON string
+            # Backend expects: {"events": [event_dict]}
+            payload = {"events": valid_events}
 
             # Create HMAC signature if secret provided
             headers = {"X-API-Key": self.api_key} if self.api_key else {}
             if self.secret:
+                # Sign the JSON payload
+                body = serialize_event(payload).encode("utf-8")
                 signature = hmac.new(self.secret.encode(), body, hashlib.sha256).hexdigest()
                 headers["X-Signature"] = signature
 
-            # Send request
+            # Send request with json parameter (automatically serializes dict)
             response = self.client.post(
                 self.endpoint,
-                content=body,
+                json=payload,  # ✅ Sends as JSON object, not string
                 headers=headers,
             )
             response.raise_for_status()

@@ -261,17 +261,18 @@ class AutoTracerMiddleware(BaseHTTPMiddleware):
 
             # Send to collector
             try:
-                # Format as NDJSON
-                ndjson_data = "\n".join([json.dumps(event) for event in events_to_send])
+                # ✅ Fixed Bug 2: Send as JSON dict instead of NDJSON string
+                # Backend expects: {"events": [event_dict]}
+                payload = {"events": events_to_send}
 
                 # Send to collector
                 with httpx.Client(timeout=10.0) as client:
                     response = client.post(
                         self.collector_url,
-                        content=ndjson_data,
+                        json=payload,  # ✅ Sends as JSON object, not string
                         headers={
                             "X-API-Key": self.api_key,
-                            "Content-Type": "application/x-ndjson",
+                            "Content-Type": "application/json",
                         },
                     )
                     response.raise_for_status()
