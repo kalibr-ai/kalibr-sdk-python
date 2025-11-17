@@ -132,23 +132,29 @@ def summarize_text(text: str) -> str:
 6. Calculates cost
 7. Sends data to Kalibr backend via HTTP POST
 
-**Data sent to backend**:
+**Data sent to backend** (JSON format, fixed Nov 2025):
 ```python
 {
-    "trace_id": "abc-123-...",
-    "span_id": "def-456-...",
-    "parent_id": "parent-span-id",  # For nested calls
-    "provider": "openai",
-    "model_name": "gpt-4o",
-    "operation": "summarize",
-    "input_tokens": 1000,
-    "output_tokens": 500,
-    "duration_ms": 850,
-    "cost_usd": 0.0275,
-    "status": "success",
-    "timestamp": "2025-01-15T10:30:00Z"
+    "events": [
+        {
+            "trace_id": "abc-123-...",
+            "span_id": "def-456-...",
+            "parent_id": "parent-span-id",  # For nested calls
+            "provider": "openai",
+            "model_name": "gpt-4o",
+            "operation": "summarize",
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "duration_ms": 850,
+            "cost_usd": 0.0275,
+            "status": "success",
+            "timestamp": "2025-01-15T10:30:00Z"
+        }
+    ]
 }
 ```
+
+**Note**: Backend expects `{"events": [...]}` format. SDK was fixed in November 2025 to send proper JSON dict instead of NDJSON string.
 
 ---
 
