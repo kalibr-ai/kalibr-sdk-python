@@ -388,7 +388,7 @@ When developers use this SDK:
 ```toml
 [project]
 name = "kalibr"
-version = "1.1.0"
+version = "1.1.0-alpha"
 description = "LLM observability and cost tracking"
 dependencies = [
     "opentelemetry-api",
