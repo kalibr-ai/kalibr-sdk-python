@@ -56,21 +56,31 @@ def send_event(payload: dict):
     url = os.getenv("KALIBR_COLLECTOR_URL", "http://localhost:8001/api/ingest")
     api_key = os.getenv("KALIBR_API_KEY", "test_key_12345")
 
-    headers = {"Content-Type": "application/json", "X-API-Key": api_key}
+    format_pref = os.getenv("KALIBR_COLLECTOR_FORMAT", "ndjson").lower()
+    use_json_envelope = format_pref == "json"
 
-    # ✅ Fixed Bug 2: Send as JSON dict instead of NDJSON string
-    # Backend expects: {"events": [event_dict]}
-    body = {"events": [payload]}
+    headers = {"X-API-Key": api_key}
+    if use_json_envelope:
+        headers["Content-Type"] = "application/json"
+        body_cfg = {"events": [payload]}
+    else:
+        headers["Content-Type"] = "application/x-ndjson"
+        body_cfg = "\n".join(json.dumps(evt) for evt in [payload]) + "\n"
 
     try:
-        response = requests.post(url, headers=headers, json=body, timeout=5)
+        if use_json_envelope:
+            response = requests.post(url, headers=headers, json=body_cfg, timeout=5)
+        else:
+            response = requests.post(url, headers=headers, data=body_cfg, timeout=5)
         if not response.ok:
             print(
                 f"[Kalibr SDK] ❌ Collector rejected event: {response.status_code} - {response.text}"
             )
         else:
+            duration_ms = payload.get("duration_ms") or payload.get("latency_ms") or 0
+            total_cost = payload.get("total_cost_usd") or payload.get("cost_usd") or 0.0
             print(
-                f"[Kalibr SDK] ✅ Event sent: {payload['operation']} ({payload['duration_ms']}ms, ${payload['total_cost_usd']:.6f})"
+                f"[Kalibr SDK] ✅ Event sent: {payload.get('operation','event')} ({duration_ms}ms, ${total_cost:.6f})"
             )
     except Exception as e:
         print(f"[Kalibr SDK] ❌ Failed to send event: {e}")
