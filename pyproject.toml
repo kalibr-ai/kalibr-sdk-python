@@ -14,7 +14,7 @@ keywords = [
     "ai", "mcp", "gpt", "claude", "gemini", "copilot",
     "openai", "anthropic", "google", "microsoft",
     "observability", "telemetry", "tracing", "llm",
-    "schema-generation", "api", "multi-model"
+    "schema-generation", "api", "multi-model", "langchain"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -46,8 +46,32 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# LangChain integration
+langchain = [
+    "langchain-core>=0.1.0",
+]
+langchain-openai = [
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.1.0",
+]
+langchain-anthropic = [
+    "langchain-core>=0.1.0",
+    "langchain-anthropic>=0.1.0",
+]
+langchain-google = [
+    "langchain-core>=0.1.0",
+    "langchain-google-genai>=0.0.10",
+]
+langchain-all = [
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.1.0",
+    "langchain-anthropic>=0.1.0",
+    "langchain-google-genai>=0.0.10",
+]
+# Development dependencies
 dev = [
     "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
@@ -63,7 +87,7 @@ Issues = "https://github.com/devonakelley/kalibr-sdk/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["kalibr*"]
+include = ["kalibr*", "kalibr_langchain*"]
 exclude = ["tests*", "examples*"]
 
 [tool.black]
