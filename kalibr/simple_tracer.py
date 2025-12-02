@@ -69,9 +69,9 @@ def send_event(payload: dict):
 
     try:
         if use_json_envelope:
-            response = requests.post(url, headers=headers, json=body_cfg, timeout=5)
+            response = requests.post(url, headers=headers, json=body_cfg, timeout=30)
         else:
-            response = requests.post(url, headers=headers, data=body_cfg, timeout=5)
+            response = requests.post(url, headers=headers, data=body_cfg, timeout=30)
         if not response.ok:
             print(
                 f"[Kalibr SDK] ❌ Collector rejected event: {response.status_code} - {response.text}"
@@ -173,7 +173,7 @@ def trace(
                 "schema_version": "1.0",
                 "trace_id": trace_id,
                 "span_id": span_id,
-                "parent_id": parent_span_id,  # Note: parent_id not parent_span_id
+                "parent_span_id": parent_span_id,  # Note: parent_id not parent_span_id
                 "tenant_id": tenant_id,
                 "workflow_id": workflow_id,
                 "sandbox_id": sandbox_id,
