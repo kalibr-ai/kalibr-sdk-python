@@ -72,10 +72,15 @@ langchain-all = [
 crewai = [
     "crewai>=0.28.0",
 ]
+# OpenAI Agents SDK integration
+openai-agents = [
+    "openai-agents>=0.0.3",
+]
 # All integrations
 integrations = [
     "langchain-core>=0.1.0",
     "crewai>=0.28.0",
+    "openai-agents>=0.0.3",
 ]
 # Development dependencies
 dev = [
@@ -96,7 +101,7 @@ Issues = "https://github.com/devonakelley/kalibr-sdk/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*"]
+include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*", "kalibr_openai_agents*"]
 exclude = ["tests*", "examples*"]
 
 [tool.black]
