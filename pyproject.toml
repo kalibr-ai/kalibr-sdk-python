@@ -14,7 +14,7 @@ keywords = [
     "ai", "mcp", "gpt", "claude", "gemini", "copilot",
     "openai", "anthropic", "google", "microsoft",
     "observability", "telemetry", "tracing", "llm",
-    "schema-generation", "api", "multi-model", "langchain"
+    "schema-generation", "api", "multi-model", "langchain", "crewai"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -68,6 +68,15 @@ langchain-all = [
     "langchain-anthropic>=0.1.0",
     "langchain-google-genai>=0.0.10",
 ]
+# CrewAI integration
+crewai = [
+    "crewai>=0.28.0",
+]
+# All integrations
+integrations = [
+    "langchain-core>=0.1.0",
+    "crewai>=0.28.0",
+]
 # Development dependencies
 dev = [
     "pytest>=7.4.0",
@@ -87,7 +96,7 @@ Issues = "https://github.com/devonakelley/kalibr-sdk/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["kalibr*", "kalibr_langchain*"]
+include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*"]
 exclude = ["tests*", "examples*"]
 
 [tool.black]
