@@ -56,10 +56,10 @@ dev = [
 kalibr = "kalibr.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/devonakelley/kalibr-sdk"
-Documentation = "https://github.com/devonakelley/kalibr-sdk#readme"
-Repository = "https://github.com/devonakelley/kalibr-sdk"
-Issues = "https://github.com/devonakelley/kalibr-sdk/issues"
+Homepage = "https://github.com/kalibr-systems/kalibr-sdk-python"
+Documentation = "https://docs.kalibr.systems"
+Repository = "https://github.com/kalibr-systems/kalibr-sdk-python"
+Issues = "https://github.com/kalibr-systems/kalibr-sdk-python/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
