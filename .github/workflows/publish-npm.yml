@@ -1,0 +1,70 @@
+name: publish-npm
+
+on:
+  push:
+    tags:
+      - "ts-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (leave empty to use package.json version)'
+        required: false
+        type: string
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: typescript/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./typescript
+        run: npm ci
+
+      - name: Run tests
+        working-directory: ./typescript
+        run: npm test
+
+      - name: Run type checking
+        working-directory: ./typescript
+        run: npm run lint
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: typescript/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./typescript
+        run: npm ci
+
+      - name: Build
+        working-directory: ./typescript
+        run: npm run build
+
+      - name: Publish to npm
+        working-directory: ./typescript
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

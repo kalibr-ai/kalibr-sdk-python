@@ -24,10 +24,11 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "build:test": "tsc src/kalibr.test.ts --outDir dist-test --module nodenext --moduleResolution nodenext --target es2022 --lib es2022 --skipLibCheck",
     "build:types": "tsc --emitDeclarationOnly",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
     "lint": "tsc --noEmit",
-    "test": "node --test dist/index.test.js",
+    "test": "npm run build && npm run build:test && node --test dist-test/kalibr.test.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -55,9 +56,8 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@types/node": "^24.10.1",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0"
-  },
-  "peerDependencies": {},
-  "dependencies": {}
+  }
 }
