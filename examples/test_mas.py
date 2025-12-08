@@ -13,7 +13,7 @@ Agents:
 - Analyzer: Uses Google Gemini to analyze and summarize
 
 Usage:
-    export KALIBR_API_KEY=test_key_12345
+    export KALIBR_API_KEY=your-kalibr-api-key
     export KALIBR_COLLECTOR_URL=http://localhost:8000/api/v1/traces
     export KALIBR_TENANT_ID=acme-prod
     export OPENAI_API_KEY=<your-key>

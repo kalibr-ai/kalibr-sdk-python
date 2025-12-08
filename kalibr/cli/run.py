@@ -57,7 +57,10 @@ def run(
 
     # Configure backend
     backend = backend_url or os.getenv("KALIBR_BACKEND_URL", "http://localhost:8001")
-    api_key = os.getenv("KALIBR_API_KEY", "test_key_12345")
+    api_key = os.getenv("KALIBR_API_KEY")
+    if not api_key:
+        console.print("[yellow]⚠️  KALIBR_API_KEY not set. Set it for trace authentication.[/yellow]")
+        api_key = ""
 
     # Generate runtime metadata
     runtime_id = str(uuid.uuid4())
