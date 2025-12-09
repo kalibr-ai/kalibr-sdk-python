@@ -123,7 +123,7 @@ def trace(
             parent_span_id = kwargs.pop("parent_span_id", None)  # None or base62 string
 
             # Load environment config
-            tenant_id = os.getenv("KALIBR_TENANT_ID", "emergent")
+            tenant_id = os.getenv("KALIBR_TENANT_ID", "default")
             workflow_id = os.getenv("KALIBR_WORKFLOW_ID", "multi_agent_demo")
             sandbox_id = os.getenv("SANDBOX_ID", "vercel_vm_001")
             runtime_env = os.getenv("RUNTIME_ENV", "vercel_vm")
