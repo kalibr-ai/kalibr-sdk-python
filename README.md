@@ -1,168 +1,164 @@
-# Kalibr Python SDK
+<div align="center">
 
-Production-grade observability for LLM applications. Automatically instrument OpenAI, Anthropic, and Google AI SDKs with zero code changes.
+<img src="public/kalibr_logo.png" alt="Kalibr" width="120" />
 
-## Features
+# Kalibr
 
-- **Zero-code instrumentation** - Automatic tracing for OpenAI, Anthropic, and Google AI
-- **Cost tracking** - Real-time cost calculation for all LLM calls
-- **Token monitoring** - Track input/output tokens across providers
-- **Parent-child traces** - Automatic trace relationship management
-- **Multi-provider support** - Works with GPT-4, Claude, Gemini, and more
+**Execution intelligence for AI agents**
 
-## Installation
+See every LLM call. Track every dollar. Debug any failure.
 
+[Website](https://kalibr.systems) · [Docs](https://kalibr.systems/docs) · [Dashboard](https://dashboard.kalibr.systems)
+
+[![PyPI](https://img.shields.io/pypi/v/kalibr?color=blue)](https://pypi.org/project/kalibr/)
+[![Downloads](https://img.shields.io/pypi/dm/kalibr)](https://pypi.org/project/kalibr/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/kalibr-ai/kalibr-sdk-python?style=social)](https://github.com/kalibr-ai/kalibr-sdk-python)
+
+</div>
+
+---
+```python
+from kalibr import auto_instrument
+auto_instrument()
+
+# That's it. Every LLM call is now traced.
+```
+
+---
+
+## Install
 ```bash
 pip install kalibr
 ```
 
 ## Quick Start
 
-### Auto-instrumentation (Recommended)
+### Auto-Instrumentation
 
-Simply import `kalibr` at the start of your application - all LLM calls are automatically traced:
-
+Works with OpenAI, Anthropic, and Google. No code changes required.
 ```python
-import kalibr  # Enable auto-instrumentation
-import openai
+from kalibr import auto_instrument
+from openai import OpenAI
 
-# Set your Kalibr API key
-import os
-os.environ["KALIBR_API_KEY"] = "your-kalibr-api-key"
+auto_instrument()
 
-# All OpenAI calls are now automatically traced
-client = openai.OpenAI()
+client = OpenAI()
 response = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Hello!"}]
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Hello"}]
 )
+
+# ✓ Traced
+# ✓ Cost calculated
+# ✓ Tokens counted
+# ✓ Latency measured
 ```
 
-### Manual Tracing with Decorator
+### Manual Tracing
 
-For more control, use the `@trace` decorator:
-
+For custom functions and complex workflows:
 ```python
 from kalibr import trace
-import openai
 
-@trace(operation="summarize", provider="openai", model="gpt-4o")
-def summarize_text(text: str) -> str:
-    client = openai.OpenAI()
+@trace(vendor="openai", model="gpt-4")
+def analyze(text: str) -> str:
+    client = OpenAI()
     response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "Summarize the following text."},
-            {"role": "user", "content": text}
-        ]
+        model="gpt-4",
+        messages=[{"role": "user", "content": f"Analyze: {text}"}]
     )
     return response.choices[0].message.content
-
-result = summarize_text("Your long text here...")
 ```
 
-### Multi-Provider Example
+## Framework Integrations
 
-```python
-import kalibr
-import openai
-import anthropic
-
-# OpenAI call - automatically traced
-openai_client = openai.OpenAI()
-gpt_response = openai_client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Explain quantum computing"}]
-)
-
-# Anthropic call - automatically traced
-anthropic_client = anthropic.Anthropic()
-claude_response = anthropic_client.messages.create(
-    model="claude-sonnet-4-20250514",
-    max_tokens=1024,
-    messages=[{"role": "user", "content": "Explain machine learning"}]
-)
-```
-
-## Configuration
-
-Configure the SDK using environment variables:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `KALIBR_API_KEY` | API key for authentication | *Required* |
-| `KALIBR_COLLECTOR_URL` | Collector endpoint URL | `http://localhost:8001/api/ingest` |
-| `KALIBR_TENANT_ID` | Tenant identifier for multi-tenant setups | `default` |
-| `KALIBR_WORKFLOW_ID` | Workflow identifier for grouping traces | `default` |
-| `KALIBR_SERVICE_NAME` | Service name for OpenTelemetry spans | `kalibr-app` |
-| `KALIBR_ENVIRONMENT` | Environment (prod, staging, dev) | `prod` |
-| `KALIBR_AUTO_INSTRUMENT` | Enable/disable auto-instrumentation | `true` |
-| `KALIBR_CONSOLE_EXPORT` | Enable console span export for debugging | `false` |
-
-## CLI Tools
-
-The SDK includes command-line tools for running and deploying applications:
-
+### LangChain
 ```bash
-# Run your app locally with tracing
-kalibr serve myapp.py
-
-# Run with managed runtime lifecycle
-kalibr run myapp.py --port 8000
-
-# Deploy to cloud platforms
-kalibr deploy myapp.py --runtime fly.io
-
-# Fetch trace data by ID
-kalibr capsule <trace-id>
+pip install kalibr-langchain
 ```
+```python
+from kalibr_langchain import KalibrCallbackHandler
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(callbacks=[KalibrCallbackHandler()])
+llm.invoke("What is 2+2?")
+```
+
+### CrewAI
+```bash
+pip install kalibr-crewai
+```
+```python
+from kalibr_crewai import KalibrCrewAIInstrumentor
+
+KalibrCrewAIInstrumentor().instrument()
+# All CrewAI agents now traced
+```
+
+### OpenAI Agents SDK
+```bash
+pip install kalibr-openai-agents
+```
+```python
+from kalibr_openai_agents import KalibrTracingProcessor
+from agents import Agent, Runner
+
+agent = Agent(name="Assistant", instructions="Be helpful")
+await Runner.run(
+    agent,
+    "Hello",
+    run_config={"tracing_processors": [KalibrTracingProcessor()]}
+)
+```
+
+## What You Get
+
+| Metric | Description |
+|--------|-------------|
+| **Cost** | Per-request and cumulative spend across all providers |
+| **Tokens** | Input/output token counts for every call |
+| **Latency** | End-to-end timing with millisecond precision |
+| **Errors** | Automatic capture with full stack traces |
+| **Traces** | Distributed tracing across services |
 
 ## Supported Providers
 
-| Provider | Models | Auto-Instrumentation |
-|----------|--------|---------------------|
-| OpenAI | GPT-4, GPT-4o, GPT-3.5 | Yes |
-| Anthropic | Claude 3 Opus, Sonnet, Haiku | Yes |
-| Google | Gemini Pro, Gemini Flash | Yes |
+| Provider | Auto | Manual |
+|----------|:----:|:------:|
+| OpenAI | ✓ | ✓ |
+| Anthropic | ✓ | ✓ |
+| Google AI | ✓ | ✓ |
+| LangChain | ✓ | ✓ |
+| CrewAI | ✓ | ✓ |
+| OpenAI Agents | ✓ | ✓ |
 
-## Examples
-
-See the [`examples/`](./examples) directory for complete examples:
-
-- `basic_example.py` - Simple tracing example
-- `basic_agent.py` - Agent with auto-instrumentation
-- `advanced_example.py` - Advanced tracing patterns
-- `cross_vendor.py` - Multi-provider workflows
-- `test_mas.py` - Multi-agent system demonstration
-
-## Development
-
+## Configuration
 ```bash
-# Clone the repository
-git clone https://github.com/kalibr-systems/kalibr-sdk-python.git
-cd kalibr-sdk-python
-
-# Install in development mode
-pip install -e ".[dev]"
-
-# Run tests
-pytest
-
-# Format code
-black kalibr/
-ruff check kalibr/
+export KALIBR_API_KEY=your-api-key
 ```
 
-## Contributing
+| Variable | Description |
+|----------|-------------|
+| `KALIBR_API_KEY` | Your API key |
+| `KALIBR_API_ENDPOINT` | Custom endpoint (optional) |
+| `KALIBR_AUTO_INSTRUMENT` | Set `false` to disable (default: `true`) |
 
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+## Packages
 
-## License
-
-MIT License - see [LICENSE](./LICENSE) for details.
+| Package | Description |
+|---------|-------------|
+| [`kalibr`](https://pypi.org/project/kalibr/) | Core SDK |
+| [`kalibr-langchain`](https://pypi.org/project/kalibr-langchain/) | LangChain integration |
+| [`kalibr-crewai`](https://pypi.org/project/kalibr-crewai/) | CrewAI integration |
+| [`kalibr-openai-agents`](https://pypi.org/project/kalibr-openai-agents/) | OpenAI Agents integration |
 
 ## Links
 
-- [Documentation](https://docs.kalibr.systems)
-- [GitHub Issues](https://github.com/kalibr-systems/kalibr-sdk-python/issues)
-- [PyPI Package](https://pypi.org/project/kalibr/)
+- [Documentation](https://kalibr.systems/docs)
+- [Dashboard](https://dashboard.kalibr.systems)
+- [GitHub Issues](https://github.com/kalibr-ai/kalibr-sdk-python/issues)
+
+## License
+
+Apache 2.0
