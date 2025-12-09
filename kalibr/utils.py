@@ -38,8 +38,8 @@ def load_config_from_env() -> Dict[str, str]:
         "workflow_id": os.getenv("KALIBR_WORKFLOW_ID", "default-workflow"),
         "sandbox_id": os.getenv("SANDBOX_ID", "local"),
         "runtime_env": os.getenv("RUNTIME_ENV", "local"),
-        "api_endpoint": os.getenv("KALIBR_API_ENDPOINT", "http://localhost:8001/api/v1/traces"),
-        "collector_url": os.getenv("KALIBR_COLLECTOR_URL", "http://localhost:8080/api/ingest"),
+        "api_endpoint": os.getenv("KALIBR_API_ENDPOINT", "https://api.kalibr.systems/api/v1/traces"),
+        "collector_url": os.getenv("KALIBR_COLLECTOR_URL", "https://api.kalibr.systems/api/ingest"),
     }
     return config
 
