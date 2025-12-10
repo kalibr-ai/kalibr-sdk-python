@@ -139,7 +139,7 @@ See the [`examples/`](./examples) directory for complete examples:
 
 ```bash
 # Clone the repository
-git clone https://github.com/kalibr-systems/kalibr-sdk-python.git
+git clone https://github.com/kalibr-ai/kalibr-sdk-python.git
 cd kalibr-sdk-python
 
 # Install in development mode
@@ -164,5 +164,5 @@ MIT License - see [LICENSE](./LICENSE) for details.
 ## Links
 
 - [Documentation](https://docs.kalibr.systems)
-- [GitHub Issues](https://github.com/kalibr-systems/kalibr-sdk-python/issues)
+- [GitHub Issues](https://github.com/kalibr-ai/kalibr-sdk-python/issues)
 - [PyPI Package](https://pypi.org/project/kalibr/)
