@@ -56,7 +56,7 @@ def run(
         raise typer.Exit(1)
 
     # Configure backend
-    backend = backend_url or os.getenv("KALIBR_BACKEND_URL", "http://localhost:8001")
+    backend = backend_url or os.getenv("KALIBR_BACKEND_URL", "https://api.kalibr.systems")
     api_key = os.getenv("KALIBR_API_KEY")
     if not api_key:
         console.print("[yellow]⚠️  KALIBR_API_KEY not set. Set it for trace authentication.[/yellow]")

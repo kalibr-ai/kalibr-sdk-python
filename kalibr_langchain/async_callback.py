@@ -65,7 +65,7 @@ class AsyncKalibrCallbackHandler(AsyncCallbackHandler):
         self.api_key = api_key or os.getenv("KALIBR_API_KEY", "")
         self.endpoint = endpoint or os.getenv(
             "KALIBR_ENDPOINT",
-            os.getenv("KALIBR_API_ENDPOINT", "http://localhost:8001/api/v1/traces")
+            os.getenv("KALIBR_API_ENDPOINT", "https://api.kalibr.systems/api/v1/traces")
         )
         self.tenant_id = tenant_id or os.getenv("KALIBR_TENANT_ID", "default")
         self.environment = environment or os.getenv("KALIBR_ENVIRONMENT", "prod")
