@@ -1,36 +1,24 @@
-"""Kalibr SDK v1.1.0 - Unified LLM Observability & Multi-Model AI Integration Framework
-
-This SDK combines:
-1. Full LLM Observability with tracing, cost tracking, and analytics
-2. Multi-Model AI Integration (GPT, Claude, Gemini, Copilot)
-3. One-line deployment with Docker and runtime router
-4. Schema generation for all major AI platforms
-5. **NEW in 1.1.0**: Auto-instrumentation of LLM SDKs (OpenAI, Anthropic, Google)
+"""Kalibr SDK v1.1.0 - LLM Observability & Tracing Framework
 
 Features:
 - **Auto-Instrumentation**: Zero-config tracing of OpenAI, Anthropic, Google SDK calls
 - **OpenTelemetry**: OTel-compatible spans with OTLP export
 - **Tracing**: Complete telemetry with @trace decorator
 - **Cost Tracking**: Multi-vendor cost calculation (OpenAI, Anthropic, etc.)
-- **Deployment**: One-command deployment to Fly.io, Render, or local
-- **Schema Generation**: Auto-generate schemas for GPT Actions, Claude MCP, Gemini, Copilot
 - **Error Handling**: Automatic error capture with stack traces
 - **Analytics**: ClickHouse-backed analytics and alerting
 
-Usage - Auto-Instrumentation (NEW):
-    from kalibr import Kalibr
+Usage - Auto-Instrumentation:
+    from kalibr import auto_instrument
     import openai  # Automatically instrumented!
 
-    app = Kalibr(title="My API")
+    auto_instrument(["openai", "anthropic", "google"])
 
-    @app.action("chat", "Chat with GPT")
-    def chat(message: str):
-        # This OpenAI call is automatically traced!
-        response = openai.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": message}]
-        )
-        return response.choices[0].message.content
+    # All LLM calls are now traced automatically
+    response = openai.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
 
 Usage - Manual Tracing:
     from kalibr import trace
@@ -44,8 +32,6 @@ Usage - Manual Tracing:
         return response
 
 CLI Usage:
-    kalibr serve my_app.py              # Run locally
-    kalibr deploy my_app.py --runtime fly  # Deploy to Fly.io
     kalibr run my_app.py                # Run with auto-tracing
     kalibr version                       # Show version
 """
@@ -79,23 +65,10 @@ from .cost_adapter import (
 )
 from .instrumentation import auto_instrument, get_instrumented_providers
 
-# ============================================================================
-# SDK & DEPLOYMENT (from 1.0.30)
-# ============================================================================
-from .kalibr import Kalibr
-from .kalibr_app import KalibrApp
 from .models import EventData, TraceConfig
-from .schemas import (
-    generate_copilot_schema,
-    generate_gemini_schema,
-    generate_mcp_schema,
-    get_base_url,
-    get_supported_models,
-)
 from .simple_tracer import trace
 from .trace_capsule import TraceCapsule, get_or_create_capsule
 from .tracer import SpanContext, Tracer
-from .types import FileUpload, Session
 from .utils import load_config_from_env
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
@@ -144,21 +117,6 @@ __all__ = [
     "EventData",
     # Utils
     "load_config_from_env",
-    # ========================================================================
-    # SDK & DEPLOYMENT
-    # ========================================================================
-    # SDK Classes
-    "Kalibr",
-    "KalibrApp",
-    # Types
-    "FileUpload",
-    "Session",
-    # Schema Generation
-    "get_base_url",
-    "generate_mcp_schema",
-    "generate_gemini_schema",
-    "generate_copilot_schema",
-    "get_supported_models",
     # ========================================================================
     # PHASE 1: SDK INSTRUMENTATION & OPENTELEMETRY (v1.1.0)
     # ========================================================================
