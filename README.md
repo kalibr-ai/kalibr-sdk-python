@@ -163,6 +163,8 @@ llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
 response = llm.invoke("What is the capital of France?")
 ```
 
+See [LangChain Integration Guide](kalibr_langchain/README.md) for full documentation.
+
 ### CrewAI
 
 ```bash
@@ -170,14 +172,12 @@ pip install kalibr[crewai]
 ```
 
 ```python
-from kalibr_crewai import KalibrCrewAIInstrumentor
+from kalibr_crewai import KalibrCrewAIHandler
 
-# Instrument CrewAI (call before creating crews)
-instrumentor = KalibrCrewAIInstrumentor()
-instrumentor.instrument()
-
-# Now all CrewAI operations are automatically traced
+handler = KalibrCrewAIHandler()
 ```
+
+See [CrewAI Integration Guide](kalibr_crewai/README.md) for full documentation.
 
 ### OpenAI Agents SDK
 
@@ -186,16 +186,12 @@ pip install kalibr[openai-agents]
 ```
 
 ```python
-from kalibr_openai_agents import setup_kalibr_tracing
-from agents import Agent, Runner
+from kalibr_openai_agents import KalibrAgentTracer
 
-# Enable Kalibr tracing
-setup_kalibr_tracing()
-
-# Use OpenAI Agents normally - all traces captured automatically
-agent = Agent(name="Assistant", instructions="You are helpful.")
-result = Runner.run_sync(agent, "Hello!")
+tracer = KalibrAgentTracer()
 ```
+
+See [OpenAI Agents Integration Guide](kalibr_openai_agents/README.md) for full documentation.
 
 ## Configuration
 
@@ -272,4 +268,5 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 - [Kalibr Dashboard](https://dashboard.kalibr.systems)
 - [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
+- [TypeScript SDK](https://github.com/kalibr-ai/kalibr-sdk-ts)
 - [PyPI](https://pypi.org/project/kalibr/)

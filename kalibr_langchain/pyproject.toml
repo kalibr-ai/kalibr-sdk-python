@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "kalibr-langchain"
 version = "0.1.0"
 description = "Kalibr observability integration for LangChain applications"
-authors = [{name = "Kalibr Team", email = "team@kalibr.dev"}]
+authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "Apache-2.0"}
