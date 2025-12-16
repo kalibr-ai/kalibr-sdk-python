@@ -9,7 +9,7 @@ description = "Kalibr observability integration for LangChain applications"
 authors = [{name = "Kalibr Team", email = "team@kalibr.dev"}]
 readme = "README.md"
 requires-python = ">=3.8"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 keywords = [
     "kalibr", "langchain", "observability", "tracing", "llm",
     "monitoring", "telemetry", "openai", "anthropic", "ai"
@@ -17,7 +17,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",

@@ -236,7 +236,6 @@ See the [`examples/`](./examples) directory:
 
 - `basic_example.py` — Simple tracing
 - `basic_agent.py` — Agent with auto-instrumentation
-- `advanced_example.py` — Advanced tracing patterns
 - `cross_vendor.py` — Multi-provider workflows
 
 ## Development
