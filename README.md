@@ -155,7 +155,7 @@ pip install kalibr[langchain]
 ```
 
 ```python
-from kalibr.integrations.langchain import KalibrCallbackHandler
+from kalibr_langchain import KalibrCallbackHandler
 from langchain_openai import ChatOpenAI
 
 handler = KalibrCallbackHandler()
@@ -170,11 +170,13 @@ pip install kalibr[crewai]
 ```
 
 ```python
-from kalibr.integrations.crewai import KalibrCrewAIHandler
-from crewai import Agent, Task, Crew
+from kalibr_crewai import KalibrCrewAIInstrumentor
 
-handler = KalibrCrewAIHandler()
-# Your CrewAI code with automatic tracing
+# Instrument CrewAI (call before creating crews)
+instrumentor = KalibrCrewAIInstrumentor()
+instrumentor.instrument()
+
+# Now all CrewAI operations are automatically traced
 ```
 
 ### OpenAI Agents SDK
@@ -184,11 +186,15 @@ pip install kalibr[openai-agents]
 ```
 
 ```python
-from kalibr.integrations.openai_agents import KalibrAgentTracer
+from kalibr_openai_agents import setup_kalibr_tracing
 from agents import Agent, Runner
 
-tracer = KalibrAgentTracer()
-# Your OpenAI Agents code with automatic tracing
+# Enable Kalibr tracing
+setup_kalibr_tracing()
+
+# Use OpenAI Agents normally - all traces captured automatically
+agent = Agent(name="Assistant", instructions="You are helpful.")
+result = Runner.run_sync(agent, "Hello!")
 ```
 
 ## Configuration
