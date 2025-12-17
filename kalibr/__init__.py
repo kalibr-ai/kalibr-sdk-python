@@ -71,6 +71,16 @@ from .trace_capsule import TraceCapsule, get_or_create_capsule
 from .tracer import SpanContext, Tracer
 from .utils import load_config_from_env
 
+# ============================================================================
+# INTELLIGENCE & OUTCOME ROUTING (v1.2.0)
+# ============================================================================
+from .intelligence import (
+    KalibrIntelligence,
+    get_policy,
+    report_outcome,
+    get_recommendation,
+)
+
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
     # Setup OpenTelemetry collector
     try:
@@ -127,4 +137,11 @@ __all__ = [
     "setup_collector",
     "get_tracer_provider",
     "is_collector_configured",
+    # ========================================================================
+    # INTELLIGENCE & OUTCOME ROUTING (v1.2.0)
+    # ========================================================================
+    "KalibrIntelligence",
+    "get_policy",
+    "report_outcome",
+    "get_recommendation",
 ]
