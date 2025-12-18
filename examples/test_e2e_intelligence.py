@@ -123,7 +123,7 @@ def create_trace_event(
         "timestamp": now,
         "ts_start": now,
         "ts_end": now,
-        "environment": "test",
+        "environment": "dev",  # Must be one of: prod, staging, dev
         "service": "e2e-intelligence-test",
         "vendor": provider,
         "data_class": "economic",
