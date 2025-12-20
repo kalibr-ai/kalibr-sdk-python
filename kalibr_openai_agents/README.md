@@ -4,10 +4,10 @@ Observability integration for OpenAI's Agents SDK using the Kalibr platform.
 
 ## Features
 
-- **TracingProcessor implementation** for seamless integration
+- **TracingProcessor implementation** for seamless integration with OpenAI Agents
 - **Automatic span capture** for agents, generations, functions, handoffs, guardrails
 - **Token and cost tracking** for LLM generations
-- **Trace hierarchy** preservation
+- **Trace hierarchy** preservation across agent handoffs
 - **Error tracking** with context
 - **Batched telemetry** for efficiency
 
@@ -38,7 +38,7 @@ result = Runner.run_sync(agent, "What is the capital of France?")
 print(result.final_output)
 ```
 
-### Option 2: Manual Setup
+### Option 2: Manual Setup with KalibrTracingProcessor
 
 ```python
 from kalibr_openai_agents import KalibrTracingProcessor
@@ -67,10 +67,10 @@ result = Runner.run_sync(agent, "Hello!")
 
 ```bash
 export KALIBR_API_KEY="your-api-key"
-export KALIBR_ENDPOINT="https://api.kalibr.dev/v1/traces"
+export KALIBR_COLLECTOR_URL="https://api.kalibr.systems/api/v1/traces"
 export KALIBR_TENANT_ID="my-tenant"
 export KALIBR_ENVIRONMENT="prod"
-export KALIBR_SERVICE="openai-agents-app"
+export KALIBR_SERVICE_NAME="openai-agents-app"
 export KALIBR_WORKFLOW_ID="my-workflow"
 ```
 
@@ -89,18 +89,17 @@ processor = KalibrTracingProcessor(
 )
 ```
 
-## What Gets Traced
+## Traced Span Types
 
 The processor captures all OpenAI Agents SDK span types:
 
 | Span Type | Operation | Data Captured |
 |-----------|-----------|---------------|
 | Generation | `llm_generation` | Model, tokens, cost, input/output |
-| Agent | `agent:{name}` | Agent name, duration |
-| Function | `function:{name}` | Function name, input/output |
-| Handoff | `handoff:{from}->{to}` | Agent transfer info |
-| Guardrail | `guardrail:{name}` | Guardrail check result |
-| Trace | `trace:{workflow}` | Workflow name, span count |
+| Agent | `agent:{name}` | Agent name, instructions, duration |
+| Function | `function:{name}` | Function name, arguments, result |
+| Handoff | `handoff:{from}->{to}` | Source agent, target agent |
+| Guardrail | `guardrail:{name}` | Guardrail check, pass/fail result |
 
 ## Event Schema
 
@@ -147,13 +146,13 @@ writer = Agent(
     handoff_description="Writes content based on research.",
 )
 
-# Run with handoffs
+# Run with handoffs - all agents and transfers are traced
 result = Runner.run_sync(
     researcher,
     "Research and write about quantum computing",
 )
 
-# All agents and handoffs are traced
+# Traces show: researcher -> writer handoff with full context
 ```
 
 ## Combining with Other Integrations
@@ -171,13 +170,6 @@ langchain_handler = KalibrCallbackHandler(tenant_id="my-tenant")
 # Both frameworks will send telemetry to Kalibr
 ```
 
-## Best Practices
-
-1. **Call setup early** - Configure tracing before creating agents
-2. **Use workflow_id** - Group related traces together
-3. **Consider capture settings** - Disable input/output capture for sensitive data
-4. **Flush on shutdown** - Call `processor.force_flush()` before exit
-
 ## Processor Lifecycle Methods
 
 ```python
@@ -190,6 +182,13 @@ processor.force_flush()
 processor.shutdown()
 ```
 
+## Best Practices
+
+1. **Call setup early** — Configure tracing before creating agents
+2. **Use workflow_id** — Group related agent traces together
+3. **Consider capture settings** — Disable input/output capture for sensitive data
+4. **Flush on shutdown** — Call `processor.force_flush()` before exit
+
 ## License
 
-MIT License - see the main Kalibr SDK license.
+Apache 2.0 License — see the main [Kalibr SDK license](../LICENSE) for details.

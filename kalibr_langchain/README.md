@@ -6,7 +6,7 @@ Observability integration for LangChain applications using the Kalibr platform.
 
 - **Zero-config tracing** of LangChain components (LLMs, chains, tools, agents, retrievers)
 - **Token tracking** with automatic extraction from LLM responses
-- **Cost calculation** using Kalibr's cost adapters for OpenAI, Anthropic, and more
+- **Cost calculation** using Kalibr's cost adapters for OpenAI, Anthropic, Google, and more
 - **Span hierarchy** for complex chains and agent workflows
 - **Error tracking** with stack traces
 - **Async support** for async LangChain operations
@@ -36,7 +36,7 @@ handler = KalibrCallbackHandler(
 )
 
 # Use with any LangChain component
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+llm = ChatOpenAI(model="gpt-4o", callbacks=[handler])
 response = llm.invoke("What is the capital of France?")
 ```
 
@@ -48,10 +48,10 @@ The handler can be configured via environment variables:
 
 ```bash
 export KALIBR_API_KEY="your-api-key"
-export KALIBR_ENDPOINT="https://api.kalibr.dev/v1/traces"
+export KALIBR_COLLECTOR_URL="https://api.kalibr.systems/api/v1/traces"
 export KALIBR_TENANT_ID="my-tenant"
 export KALIBR_ENVIRONMENT="prod"
-export KALIBR_SERVICE="my-langchain-app"
+export KALIBR_SERVICE_NAME="my-langchain-app"
 export KALIBR_WORKFLOW_ID="my-workflow"
 ```
 
@@ -88,7 +88,7 @@ handler = KalibrCallbackHandler()
 
 # Build a chain
 prompt = ChatPromptTemplate.from_template("Tell me a joke about {topic}")
-llm = ChatOpenAI(model="gpt-4")
+llm = ChatOpenAI(model="gpt-4o")
 parser = StrOutputParser()
 
 chain = prompt | llm | parser
@@ -115,7 +115,7 @@ def search(query: str) -> str:
     """Search for information."""
     return f"Results for: {query}"
 
-llm = ChatOpenAI(model="gpt-4")
+llm = ChatOpenAI(model="gpt-4o")
 agent = create_openai_functions_agent(llm, [search], prompt)
 executor = AgentExecutor(agent=agent, tools=[search])
 
@@ -158,7 +158,7 @@ from kalibr_langchain import AsyncKalibrCallbackHandler
 async def main():
     handler = AsyncKalibrCallbackHandler()
 
-    llm = ChatOpenAI(model="gpt-4")
+    llm = ChatOpenAI(model="gpt-4o")
 
     response = await llm.ainvoke(
         "Hello!",
@@ -182,8 +182,8 @@ from kalibr_langchain import KalibrCallbackHandler
 handler = KalibrCallbackHandler()
 
 # Both LLMs will be traced
-openai_llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
-anthropic_llm = ChatAnthropic(model="claude-3-sonnet-20240229", callbacks=[handler])
+openai_llm = ChatOpenAI(model="gpt-4o", callbacks=[handler])
+anthropic_llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", callbacks=[handler])
 
 # Traces will show provider and model information
 response1 = openai_llm.invoke("Hello from OpenAI!")
@@ -216,7 +216,7 @@ Events sent to Kalibr follow the v1.0 schema:
   "tenant_id": "my-tenant",
   "workflow_id": "my-workflow",
   "provider": "openai",
-  "model_id": "gpt-4",
+  "model_id": "gpt-4o",
   "operation": "chat_completion",
   "duration_ms": 250,
   "input_tokens": 100,
@@ -241,4 +241,4 @@ Events sent to Kalibr follow the v1.0 schema:
 
 ## License
 
-MIT License - see the main Kalibr SDK license for details.
+Apache 2.0 License — see the main [Kalibr SDK license](../LICENSE) for details.

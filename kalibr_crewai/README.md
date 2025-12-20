@@ -85,10 +85,10 @@ result = crew.kickoff()
 
 ```bash
 export KALIBR_API_KEY="your-api-key"
-export KALIBR_ENDPOINT="https://api.kalibr.dev/v1/traces"
+export KALIBR_COLLECTOR_URL="https://api.kalibr.systems/api/v1/traces"
 export KALIBR_TENANT_ID="my-tenant"
 export KALIBR_ENVIRONMENT="prod"
-export KALIBR_SERVICE="crewai-app"
+export KALIBR_SERVICE_NAME="crewai-app"
 export KALIBR_WORKFLOW_ID="my-workflow"
 ```
 
@@ -121,16 +121,16 @@ instrumentor = KalibrCrewAIInstrumentor(
 
 | Component | Event | Data Captured |
 |-----------|-------|---------------|
-| Crew | `crew:name` | Agents, tasks, duration, status |
-| Agent | `agent:role` | Role, goal, task, duration |
-| Task | `task:description` | Description, output, duration |
+| Crew | `crew:{name}` | Agents, tasks, duration, status |
+| Agent | `agent:{role}` | Role, goal, task, duration |
+| Task | `task:{description}` | Description, output, duration |
 
 ### With Callbacks
 
 | Callback | Event | Data Captured |
 |----------|-------|---------------|
-| `step_callback` | Agent steps | Tool calls, actions, outputs |
-| `task_callback` | Task complete | Description, raw output, agent |
+| `KalibrAgentCallback` | Agent steps | Tool calls, actions, outputs |
+| `KalibrTaskCallback` | Task complete | Description, raw output, agent |
 
 ## Event Schema
 
@@ -157,7 +157,7 @@ Events follow Kalibr's v1.0 schema:
 
 ## Best Practices
 
-1. **Use auto-instrumentation** for simplicity - it captures all operations
+1. **Use auto-instrumentation** for simplicity — it captures all operations
 2. **Use callbacks** when you need per-agent or per-task customization
 3. **Set workflow_id** to group related crew executions
 4. **Call flush()** before exit to ensure all events are sent
@@ -181,4 +181,4 @@ langchain_handler = KalibrCallbackHandler(tenant_id="my-tenant")
 
 ## License
 
-MIT License - see the main Kalibr SDK license.
+Apache 2.0 License — see the main [Kalibr SDK license](../LICENSE) for details.
