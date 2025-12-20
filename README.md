@@ -3,15 +3,15 @@
 Production-grade observability and intelligence for LLM applications. Automatically instrument OpenAI, Anthropic, and Google AI SDKs with zero code changes.
 
 [![PyPI version](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
+[![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ## Features
 
 - **Zero-code instrumentation** — Automatic tracing for OpenAI, Anthropic, and Google AI
-- **Cost tracking** — Real-time cost calculation for all LLM calls
-- **Token monitoring** — Track input/output tokens across providers
-- **Parent-child traces** — Automatic trace relationship management
-- **Intelligence API** — Query for optimal model recommendations at runtime
+- **Outcome-conditioned routing** — Query optimal models based on historical success rates
+- **Cross-agent tracing** — TraceCapsule propagates context across service boundaries
+- **Cost & token tracking** — Real-time cost calculation and token monitoring
 - **Framework integrations** — LangChain, CrewAI, OpenAI Agents SDK
 
 ## Installation
@@ -76,15 +76,45 @@ gpt_response = openai_client.chat.completions.create(
 )
 
 claude_response = anthropic_client.messages.create(
-    model="claude-sonnet-4-20250514",
+    model="claude-3-5-sonnet-20241022",
     max_tokens=1024,
     messages=[{"role": "user", "content": "Explain machine learning"}]
 )
 ```
 
-## Intelligence API
+## Outcome-Conditioned Routing
 
-Query Kalibr for optimal model recommendations based on real execution data:
+Query Kalibr for optimal model recommendations based on real execution data and historical success rates.
+
+### Query for Optimal Model
+
+```python
+from kalibr import get_policy
+
+# Get the best model for a specific goal
+policy = get_policy(goal="book_meeting")
+print(f"Use model: {policy.model_id}, provider: {policy.provider}")
+```
+
+### Report Outcomes
+
+Help Kalibr learn from your executions by reporting outcomes:
+
+```python
+from kalibr import report_outcome, get_trace_id
+
+# After an LLM call, report whether it succeeded
+trace_id = get_trace_id()
+report_outcome(
+    trace_id=trace_id,
+    goal="book_meeting",
+    success=True
+)
+```
+
+### Direct API Access
+
+For advanced use cases, use the `KalibrIntelligence` class directly:
 
 ```python
 from kalibr import KalibrIntelligence
@@ -94,20 +124,13 @@ intel = KalibrIntelligence(
     tenant_id="your-tenant-id"
 )
 
-# Get the best model for a task
-rec = intel.get_recommended_llm(
-    task_type="summarization",
-    optimize_for="reliability"  # or "cost" or "latency" or "balanced"
+# Get recommendation with optimization target
+rec = intel.get_recommendation(
+    goal="summarization",
+    optimize_for="balanced"
 )
 
 print(f"Recommended: {rec.model_id} (confidence: {rec.confidence})")
-
-# Use the recommended model
-client = OpenAI()
-response = client.chat.completions.create(
-    model=rec.model_id,
-    messages=[{"role": "user", "content": "Summarize this document..."}]
-)
 ```
 
 ### Optimization Targets
@@ -117,34 +140,52 @@ response = client.chat.completions.create(
 | `cost` | Minimize cost while maintaining quality |
 | `quality` | Maximize output quality |
 | `latency` | Minimize response time |
-| `balanced` | Equal weighting (default) |
-| `reliability` | Maximize success rate |
+| `balanced` | Equal weighting across all factors (default) |
+| `outcome` | Maximize success rate based on historical data |
 
-### With Constraints
+## TraceCapsule
+
+TraceCapsule enables cross-agent tracing by propagating context across service boundaries.
+
+### Basic Usage
 
 ```python
-rec = intel.get_recommended_llm(
-    task_type="code_generation",
-    optimize_for="balanced",
-    constraints={
-        "max_cost_usd": 0.05,
-        "max_latency_ms": 3000,
-        "min_quality": 0.8
-    }
+from kalibr import get_or_create_capsule
+
+# Get or create a capsule for the current trace
+capsule = get_or_create_capsule()
+
+# Append a hop when making an LLM call
+capsule.append_hop(
+    provider="openai",
+    model="gpt-4o",
+    cost_usd=0.002,
+    latency_ms=450
+)
+
+# Convert to JSON for HTTP header propagation
+header_value = capsule.to_json()
+# Add to outgoing request: headers["X-Kalibr-Capsule"] = header_value
+```
+
+### Cross-Service Propagation
+
+```python
+import requests
+from kalibr import get_or_create_capsule
+
+capsule = get_or_create_capsule()
+capsule.append_hop(provider="anthropic", model="claude-3-5-sonnet-20241022", cost_usd=0.003, latency_ms=320)
+
+# Propagate to downstream service
+response = requests.post(
+    "https://api.example.com/process",
+    headers={"X-Kalibr-Capsule": capsule.to_json()},
+    json={"data": "..."}
 )
 ```
 
-### Report Outcomes (Feedback Loop)
-
-Help Kalibr learn from your executions:
-
-```python
-intel.report_outcome(
-    trace_id="abc-123",
-    quality_score=0.9,
-    outcome="success"  # or "error" or "timeout"
-)
-```
+> **Note:** TraceCapsule maintains a rolling window of the last 5 hops to keep payload size manageable.
 
 ## Framework Integrations
 
@@ -159,7 +200,7 @@ from kalibr_langchain import KalibrCallbackHandler
 from langchain_openai import ChatOpenAI
 
 handler = KalibrCallbackHandler()
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+llm = ChatOpenAI(model="gpt-4o", callbacks=[handler])
 response = llm.invoke("What is the capital of France?")
 ```
 
@@ -172,9 +213,19 @@ pip install kalibr[crewai]
 ```
 
 ```python
-from kalibr_crewai import KalibrCrewAIHandler
+from kalibr_crewai import KalibrCrewAIInstrumentor
 
-handler = KalibrCrewAIHandler()
+# Instrument all CrewAI agents
+instrumentor = KalibrCrewAIInstrumentor()
+instrumentor.instrument()
+
+# Now create and run your crew as normal
+from crewai import Agent, Task, Crew
+
+agent = Agent(role="Researcher", goal="Research topics", backstory="...")
+task = Task(description="Research AI trends", agent=agent)
+crew = Crew(agents=[agent], tasks=[task])
+result = crew.kickoff()
 ```
 
 See [CrewAI Integration Guide](kalibr_crewai/README.md) for full documentation.
@@ -186,9 +237,16 @@ pip install kalibr[openai-agents]
 ```
 
 ```python
-from kalibr_openai_agents import KalibrAgentTracer
+from kalibr_openai_agents import setup_kalibr_tracing
 
-tracer = KalibrAgentTracer()
+# Enable tracing for OpenAI Agents
+setup_kalibr_tracing()
+
+# Now use OpenAI Agents as normal
+from agents import Agent, Runner
+
+agent = Agent(name="Assistant", instructions="You are a helpful assistant.")
+result = Runner.run_sync(agent, "Hello!")
 ```
 
 See [OpenAI Agents Integration Guide](kalibr_openai_agents/README.md) for full documentation.
@@ -200,45 +258,50 @@ Configure via environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KALIBR_API_KEY` | API key for authentication | *Required* |
-| `KALIBR_COLLECTOR_URL` | Collector endpoint URL | `https://api.kalibr.systems/api/ingest` |
+| `KALIBR_COLLECTOR_URL` | Collector endpoint URL | `https://api.kalibr.systems/api/v1/traces` |
 | `KALIBR_TENANT_ID` | Tenant identifier | `default` |
 | `KALIBR_WORKFLOW_ID` | Workflow identifier | `default` |
 | `KALIBR_SERVICE_NAME` | Service name for spans | `kalibr-app` |
 | `KALIBR_ENVIRONMENT` | Environment (prod/staging/dev) | `prod` |
 | `KALIBR_AUTO_INSTRUMENT` | Enable auto-instrumentation | `true` |
+| `KALIBR_INTELLIGENCE_URL` | Intelligence API endpoint | `https://api.kalibr.systems/api/v1/intelligence` |
 
-## CLI Tools
+## CLI Commands
 
 ```bash
-# Run your app locally with tracing
+# Start a local development server with tracing
 kalibr serve myapp.py
 
-# Run with managed runtime lifecycle
+# Run your app with managed runtime lifecycle
 kalibr run myapp.py --port 8000
 
 # Deploy to cloud platforms
 kalibr deploy myapp.py --runtime fly.io
 
-# Fetch trace data by ID
+# Fetch trace capsule data by ID
 kalibr capsule <trace-id>
+
+# Show SDK version
+kalibr version
 ```
 
 ## Supported Providers
 
 | Provider | Models | Auto-Instrumentation |
 |----------|--------|---------------------|
-| OpenAI | GPT-4, GPT-4o, GPT-3.5 | Yes |
-| Anthropic | Claude 3 Opus, Sonnet, Haiku | Yes |
-| Google | Gemini Pro, Gemini Flash | Yes |
-| Cohere | Command, Command-R | Yes |
+| OpenAI | GPT-4, GPT-4o, GPT-4o-mini, o1, o1-mini | Yes |
+| Anthropic | Claude 3.5 Sonnet, Claude 3 Opus, Sonnet, Haiku | Yes |
+| Google | Gemini Pro, Gemini Flash, Gemini Ultra | Yes |
 
 ## Examples
 
 See the [`examples/`](./examples) directory:
 
-- `basic_example.py` — Simple tracing
-- `basic_agent.py` — Agent with auto-instrumentation
+- `basic_example.py` — Simple auto-instrumentation
+- `basic_agent.py` — Agent with tracing
 - `cross_vendor.py` — Multi-provider workflows
+- `outcome_routing.py` — Outcome-conditioned model selection
+- `trace_capsule.py` — Cross-service trace propagation
 
 ## Development
 
@@ -253,6 +316,8 @@ pytest
 
 # Format code
 black kalibr/
+
+# Lint code
 ruff check kalibr/
 ```
 
@@ -266,7 +331,8 @@ Apache 2.0 — see [LICENSE](LICENSE).
 
 ## Links
 
-- [Kalibr Dashboard](https://dashboard.kalibr.systems)
+- [Documentation](https://docs.kalibr.systems)
+- [Dashboard](https://dashboard.kalibr.systems)
 - [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
 - [TypeScript SDK](https://github.com/kalibr-ai/kalibr-sdk-ts)
 - [PyPI](https://pypi.org/project/kalibr/)
