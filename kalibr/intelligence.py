@@ -251,7 +251,7 @@ def _get_intelligence_client() -> KalibrIntelligence:
     return _intelligence_client
 
 
-def get_policy(goal: str, **kwargs) -> dict[str, Any]:
+def get_policy(goal: str, tenant_id: str | None = None, **kwargs) -> dict[str, Any]:
     """Get execution policy for a goal.
 
     Convenience function that uses the default intelligence client.
@@ -259,6 +259,7 @@ def get_policy(goal: str, **kwargs) -> dict[str, Any]:
 
     Args:
         goal: The goal to optimize for
+        tenant_id: Optional tenant ID override (default: uses KALIBR_TENANT_ID env var)
         **kwargs: Additional arguments (task_type, constraints, window_hours)
 
     Returns:
@@ -270,10 +271,14 @@ def get_policy(goal: str, **kwargs) -> dict[str, Any]:
         policy = get_policy(goal="book_meeting")
         model = policy["recommended_model"]
     """
-    return _get_intelligence_client().get_policy(goal, **kwargs)
+    client = _get_intelligence_client()
+    if tenant_id:
+        # Create a new client with the specified tenant_id
+        client = KalibrIntelligence(tenant_id=tenant_id)
+    return client.get_policy(goal, **kwargs)
 
 
-def report_outcome(trace_id: str, goal: str, success: bool, **kwargs) -> dict[str, Any]:
+def report_outcome(trace_id: str, goal: str, success: bool, tenant_id: str | None = None, **kwargs) -> dict[str, Any]:
     """Report execution outcome for a goal.
 
     Convenience function that uses the default intelligence client.
@@ -283,6 +288,7 @@ def report_outcome(trace_id: str, goal: str, success: bool, **kwargs) -> dict[st
         trace_id: The trace ID from the execution
         goal: The goal this execution was trying to achieve
         success: Whether the goal was achieved
+        tenant_id: Optional tenant ID override (default: uses KALIBR_TENANT_ID env var)
         **kwargs: Additional arguments (score, failure_reason, metadata)
 
     Returns:
@@ -293,7 +299,11 @@ def report_outcome(trace_id: str, goal: str, success: bool, **kwargs) -> dict[st
 
         report_outcome(trace_id="abc123", goal="book_meeting", success=True)
     """
-    return _get_intelligence_client().report_outcome(trace_id, goal, success, **kwargs)
+    client = _get_intelligence_client()
+    if tenant_id:
+        # Create a new client with the specified tenant_id
+        client = KalibrIntelligence(tenant_id=tenant_id)
+    return client.report_outcome(trace_id, goal, success, **kwargs)
 
 
 def get_recommendation(task_type: str, **kwargs) -> dict[str, Any]:
