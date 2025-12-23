@@ -47,7 +47,7 @@ def run(
         kalibr run weather.py --runtime fly.io
 
         # Custom backend
-        kalibr run weather.py --backend-url https://api.kalibr.io
+        kalibr run weather.py --backend-url https://api.kalibr.systems
     """
     # Validate file exists
     agent_path = Path(file_path).resolve()

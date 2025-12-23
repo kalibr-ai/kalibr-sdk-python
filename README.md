@@ -129,19 +129,28 @@ from kalibr import TraceCapsule, get_or_create_capsule
 
 # Agent 1: Create capsule and add hop
 capsule = get_or_create_capsule()
-capsule.add_hop(
-    agent_id="agent-1",
-    model="gpt-4o",
-    latency_ms=150,
-    cost_usd=0.002
-)
+capsule.append_hop({
+    "provider": "openai",
+    "operation": "chat_completion",
+    "model": "gpt-4o",
+    "duration_ms": 150,
+    "cost_usd": 0.002,
+    "status": "success"
+})
 
 # Pass to Agent 2 via HTTP header
-headers = {"X-Kalibr-Capsule": capsule.to_header()}
+headers = {"X-Kalibr-Capsule": capsule.to_json()}
 
 # Agent 2: Receive and continue
-capsule = TraceCapsule.from_header(headers["X-Kalibr-Capsule"])
-capsule.add_hop(agent_id="agent-2", model="claude-3-5-sonnet-20241022", ...)
+capsule = TraceCapsule.from_json(headers["X-Kalibr-Capsule"])
+capsule.append_hop({
+    "provider": "anthropic",
+    "operation": "chat_completion",
+    "model": "claude-3-5-sonnet-20241022",
+    "duration_ms": 200,
+    "cost_usd": 0.003,
+    "status": "success"
+})
 ```
 
 ## Framework Integrations

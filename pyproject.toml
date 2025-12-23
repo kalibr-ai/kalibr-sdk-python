@@ -8,7 +8,7 @@ version = "1.2.0"
 description = "Unified LLM Observability & Multi-Model AI Integration Framework - Deploy to GPT, Claude, Gemini, Copilot with full telemetry."
 authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = {text = "Apache-2.0"}
 keywords = [
     "ai", "mcp", "gpt", "claude", "gemini", "copilot",

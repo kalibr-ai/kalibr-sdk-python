@@ -11,7 +11,7 @@
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Email us at: **support@kalibr.systems**
+Email us at: **security@kalibr.systems**
 
 Include:
 - Description of the vulnerability
