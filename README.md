@@ -1,18 +1,19 @@
 # Kalibr Python SDK
 
-Production-grade observability and intelligence for LLM applications. Automatically instrument OpenAI, Anthropic, and Google AI SDKs with zero code changes.
+Production-grade observability and execution intelligence for LLM applications. Automatically instrument OpenAI, Anthropic, and Google AI SDKs with zero code changes.
 
 [![PyPI version](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
+[![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ## Features
 
-- **Zero-code instrumentation** — Automatic tracing for OpenAI, Anthropic, and Google AI
-- **Cost tracking** — Real-time cost calculation for all LLM calls
-- **Token monitoring** — Track input/output tokens across providers
-- **Parent-child traces** — Automatic trace relationship management
-- **Intelligence API** — Query for optimal model recommendations at runtime
-- **Framework integrations** — LangChain, CrewAI, OpenAI Agents SDK
+- **Zero-code instrumentation** - Automatic tracing for OpenAI, Anthropic, and Google AI SDKs
+- **Outcome-conditioned routing** - Query for optimal models based on historical success rates
+- **TraceCapsule** - Cross-agent context propagation for multi-agent systems
+- **Cost tracking** - Real-time cost calculation for all LLM calls
+- **Token monitoring** - Track input/output tokens across providers
+- **Framework integrations** - LangChain, CrewAI, OpenAI Agents SDK
 
 ## Installation
 
@@ -24,7 +25,7 @@ pip install kalibr
 
 ### Auto-instrumentation (Recommended)
 
-Simply import `kalibr` at the start of your application—all LLM calls are automatically traced:
+Simply import `kalibr` at the start of your application - all LLM calls are automatically traced:
 
 ```python
 import kalibr  # Must be FIRST import
@@ -38,7 +39,7 @@ response = client.chat.completions.create(
 # That's it. The call is automatically traced.
 ```
 
-### Manual Tracing with Decorator
+### Manual Tracing with @trace Decorator
 
 For more control, use the `@trace` decorator:
 
@@ -76,56 +77,41 @@ gpt_response = openai_client.chat.completions.create(
 )
 
 claude_response = anthropic_client.messages.create(
-    model="claude-sonnet-4-20250514",
+    model="claude-3-5-sonnet-20241022",
     max_tokens=1024,
     messages=[{"role": "user", "content": "Explain machine learning"}]
 )
 ```
 
-## Intelligence API
+## Outcome-Conditioned Routing
 
-Query Kalibr for optimal model recommendations based on real execution data:
+Query Kalibr for optimal model recommendations based on real execution outcomes:
 
 ```python
-from kalibr import KalibrIntelligence
+from kalibr import get_policy, report_outcome
 
-intel = KalibrIntelligence(
-    api_key="your-kalibr-api-key",
-    tenant_id="your-tenant-id"
-)
+# Before executing - get the best model for your goal
+policy = get_policy(goal="book_meeting")
+print(f"Use {policy['recommended_model']} - {policy['outcome_success_rate']:.0%} success rate")
 
-# Get the best model for a task
-rec = intel.get_recommended_llm(
-    task_type="summarization",
-    optimize_for="reliability"  # or "cost" or "latency" or "balanced"
-)
+# Execute with the recommended model
+# ...
 
-print(f"Recommended: {rec.model_id} (confidence: {rec.confidence})")
-
-# Use the recommended model
-client = OpenAI()
-response = client.chat.completions.create(
-    model=rec.model_id,
-    messages=[{"role": "user", "content": "Summarize this document..."}]
+# After executing - report what happened
+report_outcome(
+    trace_id="abc123",
+    goal="book_meeting",
+    success=True
 )
 ```
-
-### Optimization Targets
-
-| Target | Description |
-|--------|-------------|
-| `cost` | Minimize cost while maintaining quality |
-| `quality` | Maximize output quality |
-| `latency` | Minimize response time |
-| `balanced` | Equal weighting (default) |
-| `reliability` | Maximize success rate |
 
 ### With Constraints
 
 ```python
-rec = intel.get_recommended_llm(
-    task_type="code_generation",
-    optimize_for="balanced",
+from kalibr import get_policy
+
+policy = get_policy(
+    goal="resolve_ticket",
     constraints={
         "max_cost_usd": 0.05,
         "max_latency_ms": 3000,
@@ -134,16 +120,28 @@ rec = intel.get_recommended_llm(
 )
 ```
 
-### Report Outcomes (Feedback Loop)
+## TraceCapsule - Cross-Agent Tracing
 
-Help Kalibr learn from your executions:
+Propagate trace context across agent boundaries:
 
 ```python
-intel.report_outcome(
-    trace_id="abc-123",
-    quality_score=0.9,
-    outcome="success"  # or "error" or "timeout"
+from kalibr import TraceCapsule, get_or_create_capsule
+
+# Agent 1: Create capsule and add hop
+capsule = get_or_create_capsule()
+capsule.add_hop(
+    agent_id="agent-1",
+    model="gpt-4o",
+    latency_ms=150,
+    cost_usd=0.002
 )
+
+# Pass to Agent 2 via HTTP header
+headers = {"X-Kalibr-Capsule": capsule.to_header()}
+
+# Agent 2: Receive and continue
+capsule = TraceCapsule.from_header(headers["X-Kalibr-Capsule"])
+capsule.add_hop(agent_id="agent-2", model="claude-3-5-sonnet-20241022", ...)
 ```
 
 ## Framework Integrations
@@ -159,7 +157,7 @@ from kalibr_langchain import KalibrCallbackHandler
 from langchain_openai import ChatOpenAI
 
 handler = KalibrCallbackHandler()
-llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
+llm = ChatOpenAI(model="gpt-4o", callbacks=[handler])
 response = llm.invoke("What is the capital of France?")
 ```
 
@@ -172,9 +170,13 @@ pip install kalibr[crewai]
 ```
 
 ```python
-from kalibr_crewai import KalibrCrewAIHandler
+from kalibr_crewai import KalibrCrewAIInstrumentor
+from crewai import Agent, Task, Crew
 
-handler = KalibrCrewAIHandler()
+instrumentor = KalibrCrewAIInstrumentor()
+instrumentor.instrument()
+
+# Use CrewAI normally - all operations are traced
 ```
 
 See [CrewAI Integration Guide](kalibr_crewai/README.md) for full documentation.
@@ -186,9 +188,13 @@ pip install kalibr[openai-agents]
 ```
 
 ```python
-from kalibr_openai_agents import KalibrAgentTracer
+from kalibr_openai_agents import setup_kalibr_tracing
+from agents import Agent, Runner
 
-tracer = KalibrAgentTracer()
+setup_kalibr_tracing()
+
+agent = Agent(name="Assistant", instructions="You are helpful.")
+result = Runner.run_sync(agent, "Hello!")
 ```
 
 See [OpenAI Agents Integration Guide](kalibr_openai_agents/README.md) for full documentation.
@@ -200,27 +206,31 @@ Configure via environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KALIBR_API_KEY` | API key for authentication | *Required* |
-| `KALIBR_COLLECTOR_URL` | Collector endpoint URL | `https://api.kalibr.systems/api/ingest` |
 | `KALIBR_TENANT_ID` | Tenant identifier | `default` |
-| `KALIBR_WORKFLOW_ID` | Workflow identifier | `default` |
+| `KALIBR_COLLECTOR_URL` | Collector endpoint URL | `https://api.kalibr.systems/api/ingest` |
+| `KALIBR_INTELLIGENCE_URL` | Intelligence API URL | `https://kalibr-intelligence.fly.dev` |
 | `KALIBR_SERVICE_NAME` | Service name for spans | `kalibr-app` |
 | `KALIBR_ENVIRONMENT` | Environment (prod/staging/dev) | `prod` |
+| `KALIBR_WORKFLOW_ID` | Workflow identifier | `default` |
 | `KALIBR_AUTO_INSTRUMENT` | Enable auto-instrumentation | `true` |
 
-## CLI Tools
+## CLI Commands
 
 ```bash
-# Run your app locally with tracing
+# Serve your app with tracing
 kalibr serve myapp.py
 
-# Run with managed runtime lifecycle
+# Run with managed runtime
 kalibr run myapp.py --port 8000
 
 # Deploy to cloud platforms
 kalibr deploy myapp.py --runtime fly.io
 
-# Fetch trace data by ID
+# Fetch trace capsule by ID
 kalibr capsule <trace-id>
+
+# Show version
+kalibr version
 ```
 
 ## Supported Providers
@@ -228,17 +238,8 @@ kalibr capsule <trace-id>
 | Provider | Models | Auto-Instrumentation |
 |----------|--------|---------------------|
 | OpenAI | GPT-4, GPT-4o, GPT-3.5 | Yes |
-| Anthropic | Claude 3 Opus, Sonnet, Haiku | Yes |
+| Anthropic | Claude 3.5 Sonnet, Claude 3 Opus/Sonnet/Haiku | Yes |
 | Google | Gemini Pro, Gemini Flash | Yes |
-| Cohere | Command, Command-R | Yes |
-
-## Examples
-
-See the [`examples/`](./examples) directory:
-
-- `basic_example.py` — Simple tracing
-- `basic_agent.py` — Agent with auto-instrumentation
-- `cross_vendor.py` — Multi-provider workflows
 
 ## Development
 
@@ -262,11 +263,11 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0 - see [LICENSE](LICENSE).
 
 ## Links
 
-- [Kalibr Dashboard](https://dashboard.kalibr.systems)
+- [Documentation](https://docs.kalibr.systems)
+- [Dashboard](https://dashboard.kalibr.systems)
 - [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
-- [TypeScript SDK](https://github.com/kalibr-ai/kalibr-sdk-ts)
 - [PyPI](https://pypi.org/project/kalibr/)

@@ -85,7 +85,7 @@ result = crew.kickoff()
 
 ```bash
 export KALIBR_API_KEY="your-api-key"
-export KALIBR_ENDPOINT="https://api.kalibr.dev/v1/traces"
+export KALIBR_COLLECTOR_URL="https://api.kalibr.systems/api/ingest"
 export KALIBR_TENANT_ID="my-tenant"
 export KALIBR_ENVIRONMENT="prod"
 export KALIBR_SERVICE="crewai-app"
@@ -181,4 +181,4 @@ langchain_handler = KalibrCallbackHandler(tenant_id="my-tenant")
 
 ## License
 
-MIT License - see the main Kalibr SDK license.
+Apache 2.0 - see the main Kalibr SDK [LICENSE](../LICENSE) for details.

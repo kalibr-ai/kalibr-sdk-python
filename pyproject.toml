@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kalibr"
-version = "1.1.3-alpha"
+version = "1.2.0"
 description = "Unified LLM Observability & Multi-Model AI Integration Framework - Deploy to GPT, Claude, Gemini, Copilot with full telemetry."
 authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
 readme = "README.md"
