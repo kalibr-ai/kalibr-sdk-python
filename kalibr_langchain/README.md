@@ -48,7 +48,7 @@ The handler can be configured via environment variables:
 
 ```bash
 export KALIBR_API_KEY="your-api-key"
-export KALIBR_ENDPOINT="https://api.kalibr.dev/v1/traces"
+export KALIBR_COLLECTOR_URL="https://api.kalibr.systems/api/ingest"
 export KALIBR_TENANT_ID="my-tenant"
 export KALIBR_ENVIRONMENT="prod"
 export KALIBR_SERVICE="my-langchain-app"
@@ -183,7 +183,7 @@ handler = KalibrCallbackHandler()
 
 # Both LLMs will be traced
 openai_llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
-anthropic_llm = ChatAnthropic(model="claude-3-sonnet-20240229", callbacks=[handler])
+anthropic_llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", callbacks=[handler])
 
 # Traces will show provider and model information
 response1 = openai_llm.invoke("Hello from OpenAI!")
@@ -241,4 +241,4 @@ Events sent to Kalibr follow the v1.0 schema:
 
 ## License
 
-MIT License - see the main Kalibr SDK license for details.
+Apache 2.0 - see the main Kalibr SDK [LICENSE](../LICENSE) for details.

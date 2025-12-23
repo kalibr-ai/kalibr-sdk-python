@@ -30,9 +30,9 @@ def version():
     from kalibr import __version__
 
     console.print(f"[bold]Kalibr SDK version:[/bold] {__version__}")
-    console.print("Enhanced multi-model AI integration framework")
-    console.print("Supports: GPT Actions, Claude MCP, Gemini Extensions, Copilot Plugins")
-    console.print("GitHub: https://github.com/devonakelley/kalibr-sdk")
+    console.print("LLM Observability & Execution Intelligence")
+    console.print("Auto-instrumentation for OpenAI, Anthropic, Google AI")
+    console.print("GitHub: https://github.com/kalibr-ai/kalibr-sdk-python")
 
 
 @app.command()
