@@ -46,7 +46,7 @@ Usage with Auto-Instrumentation:
 
 Environment Variables:
     KALIBR_API_KEY: API key for authentication
-    KALIBR_ENDPOINT: Backend endpoint URL
+    KALIBR_COLLECTOR_URL: Backend endpoint URL
     KALIBR_TENANT_ID: Tenant identifier
     KALIBR_ENVIRONMENT: Environment (prod/staging/dev)
     KALIBR_SERVICE: Service name

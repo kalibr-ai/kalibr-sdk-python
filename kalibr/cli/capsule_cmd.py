@@ -63,7 +63,7 @@ def capsule(
         kalibr capsule abc-123-def --export --output capsule.json
 
         # Specify custom API URL
-        kalibr capsule abc-123-def -u https://api.kalibr.io
+        kalibr capsule abc-123-def -u https://api.kalibr.systems
     """
     # Determine API base URL
     base_url = api_url or "https://api.kalibr.systems"

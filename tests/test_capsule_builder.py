@@ -189,7 +189,7 @@ class TestCapsuleCLI:
         test_cases = [
             ("http://localhost:8001", "trace-123", False, "http://localhost:8001/api/capsule/trace-123"),
             ("http://localhost:8001/", "trace-456", False, "http://localhost:8001/api/capsule/trace-456"),
-            ("https://api.kalibr.io", "trace-789", True, "https://api.kalibr.io/api/capsule/trace-789/export"),
+            ("https://api.kalibr.systems", "trace-789", True, "https://api.kalibr.systems/api/capsule/trace-789/export"),
         ]
         
         for base_url, trace_id, export, expected in test_cases:
