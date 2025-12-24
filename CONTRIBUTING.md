@@ -201,7 +201,7 @@ If you discover a security vulnerability, please **do not** open a public issue.
 
 - **GitHub Discussions**: For questions and feature requests
 - **Email**: support@kalibr.systems
-- **Documentation**: https://docs.kalibr.systems
+- **Documentation**: https://kalibr.systems/docs
 
 ## License
 

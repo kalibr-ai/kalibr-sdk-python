@@ -276,7 +276,7 @@ Apache 2.0 - see [LICENSE](LICENSE).
 
 ## Links
 
-- [Documentation](https://docs.kalibr.systems)
+- [Documentation](https://kalibr.systems/docs)
 - [Dashboard](https://dashboard.kalibr.systems)
 - [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
 - [PyPI](https://pypi.org/project/kalibr/)
