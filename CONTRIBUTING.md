@@ -195,7 +195,7 @@ To add a new framework integration:
 
 ## Security Issues
 
-If you discover a security vulnerability, please **do not** open a public issue. Instead, email security@kalibr.systems with details. We will respond promptly and work with you to address the issue.
+If you discover a security vulnerability, please **do not** open a public issue. Instead, email support@kalibr.systems with details. We will respond promptly and work with you to address the issue.
 
 ## Questions and Support
 
