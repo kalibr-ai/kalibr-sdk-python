@@ -95,7 +95,7 @@ kalibr = "kalibr.cli.main:app"
 
 [project.urls]
 Homepage = "https://github.com/kalibr-ai/kalibr-sdk-python"
-Documentation = "https://docs.kalibr.systems"
+Documentation = "https://kalibr.systems/docs"
 Repository = "https://github.com/kalibr-ai/kalibr-sdk-python"
 Issues = "https://github.com/kalibr-ai/kalibr-sdk-python/issues"
 
