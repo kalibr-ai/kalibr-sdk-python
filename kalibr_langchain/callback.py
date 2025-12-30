@@ -29,6 +29,8 @@ try:
 except ImportError:
     CostAdapterFactory = None
 
+from kalibr.context import get_goal
+
 # Import tiktoken for token counting
 try:
     import tiktoken
@@ -288,6 +290,25 @@ class KalibrCallbackHandler(BaseCallbackHandler):
         # Compute cost
         cost_usd = self._compute_cost(provider, model, input_tokens, output_tokens)
 
+        # Extract tool_id from operation if this is a tool span
+        tool_id = ""
+        tool_input = ""
+        tool_output = ""
+
+        if span.get("span_type") == "tool":
+            operation = span.get("operation", "")
+            if operation.startswith("tool:"):
+                tool_id = operation[5:]  # Extract "browserless" from "tool:browserless"
+
+            # Get tool input/output from span (truncate to 10KB)
+            if span.get("input"):
+                tool_input = str(span["input"])[:10000]
+            if metadata and metadata.get("output"):
+                tool_output = str(metadata["output"])[:10000]
+
+        # Get goal from context (thread-safe)
+        current_goal = get_goal() or ""
+
         # Build event
         event = {
             "schema_version": "1.0",
@@ -318,6 +339,11 @@ class KalibrCallbackHandler(BaseCallbackHandler):
             "service": self.service,
             "runtime_env": os.getenv("RUNTIME_ENV", "local"),
             "sandbox_id": os.getenv("SANDBOX_ID", "local"),
+            # New fields for tool/goal tracking
+            "tool_id": tool_id,
+            "tool_input": tool_input,
+            "tool_output": tool_output,
+            "goal": current_goal,
             "metadata": {
                 **self.default_metadata,
                 "span_type": span.get("span_type", "llm"),
