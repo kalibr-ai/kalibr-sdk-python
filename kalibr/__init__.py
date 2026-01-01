@@ -56,7 +56,17 @@ from .collector import is_configured as is_collector_configured
 from .collector import (
     setup_collector,
 )
-from .context import get_parent_span_id, get_trace_id, new_trace_id, trace_context
+from .context import (
+    get_parent_span_id,
+    get_trace_id,
+    new_trace_id,
+    trace_context,
+    # Goal context (v1.3.0)
+    goal,
+    set_goal,
+    get_goal,
+    clear_goal,
+)
 from .cost_adapter import (
     AnthropicCostAdapter,
     BaseCostAdapter,
@@ -114,6 +124,11 @@ __all__ = [
     "get_trace_id",
     "get_parent_span_id",
     "new_trace_id",
+    # Goal Context (v1.3.0)
+    "goal",
+    "set_goal",
+    "get_goal",
+    "clear_goal",
     # Tracer
     "Tracer",
     "SpanContext",

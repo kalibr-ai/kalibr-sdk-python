@@ -8,6 +8,7 @@ HTTP requests to SDK calls (OpenAI, Anthropic, Google).
 import random
 import string
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Dict, Optional
 
@@ -130,3 +131,44 @@ def inject_kalibr_context_into_span(span: Span):
             span.set_attribute("kalibr.http_trace_id", ctx["trace_id"])
         if ctx.get("span_id"):
             span.set_attribute("kalibr.http_span_id", ctx["span_id"])
+
+
+# ============================================================================
+# Goal Context for Outcome Tracking (v1.3.0)
+# ============================================================================
+
+_goal_context: ContextVar[Optional[str]] = ContextVar("goal_context", default=None)
+
+
+def set_goal(goal: str):
+    """Set the current goal for all subsequent Kalibr traces."""
+    _goal_context.set(goal)
+
+
+def get_goal() -> Optional[str]:
+    """Get the current goal."""
+    return _goal_context.get()
+
+
+def clear_goal():
+    """Clear the current goal."""
+    _goal_context.set(None)
+
+
+@contextmanager
+def goal(goal_name: str):
+    """Context manager to set goal for a block of code.
+
+    Usage:
+        with kalibr.goal("research_company"):
+            agent.run("Research Weights & Biases")
+    """
+    previous = get_goal()
+    set_goal(goal_name)
+    try:
+        yield
+    finally:
+        if previous:
+            set_goal(previous)
+        else:
+            clear_goal()
