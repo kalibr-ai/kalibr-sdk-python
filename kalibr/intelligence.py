@@ -151,6 +151,8 @@ class KalibrIntelligence:
         score: float | None = None,
         failure_reason: str | None = None,
         metadata: dict | None = None,
+        tool_id: str | None = None,
+        execution_params: dict | None = None,
     ) -> dict[str, Any]:
         """Report execution outcome for a goal.
 
@@ -164,6 +166,8 @@ class KalibrIntelligence:
             score: Optional quality score (0-1) for more granular feedback
             failure_reason: Optional reason for failure (helps with debugging)
             metadata: Optional additional context as a dict
+            tool_id: Optional tool that was used (e.g., "serper", "browserless")
+            execution_params: Optional execution parameters (e.g., {"temperature": 0.3})
 
         Returns:
             dict with:
@@ -196,6 +200,8 @@ class KalibrIntelligence:
                 "score": score,
                 "failure_reason": failure_reason,
                 "metadata": metadata,
+                "tool_id": tool_id,
+                "execution_params": execution_params,
             },
         )
         return response.json()
@@ -549,7 +555,7 @@ def report_outcome(trace_id: str, goal: str, success: bool, tenant_id: str | Non
         goal: The goal this execution was trying to achieve
         success: Whether the goal was achieved
         tenant_id: Optional tenant ID override (default: uses KALIBR_TENANT_ID env var)
-        **kwargs: Additional arguments (score, failure_reason, metadata)
+        **kwargs: Additional arguments (score, failure_reason, metadata, tool_id, execution_params)
 
     Returns:
         Response dict with status confirmation
