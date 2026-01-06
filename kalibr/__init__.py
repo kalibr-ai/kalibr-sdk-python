@@ -89,6 +89,8 @@ from .intelligence import (
     get_policy,
     report_outcome,
     get_recommendation,
+    register_path,
+    decide,
 )
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
@@ -159,4 +161,6 @@ __all__ = [
     "get_policy",
     "report_outcome",
     "get_recommendation",
+    "register_path",
+    "decide",
 ]
