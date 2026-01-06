@@ -120,6 +120,41 @@ policy = get_policy(
 )
 ```
 
+### Intelligent Routing with decide()
+
+Register execution paths and let Kalibr decide the best strategy:
+
+```python
+from kalibr import register_path, decide
+
+# Register available paths
+register_path(goal="book_meeting", model_id="gpt-4o", tool_id="calendar_api")
+register_path(goal="book_meeting", model_id="claude-3-sonnet")
+
+# Get intelligent routing decision
+decision = decide(goal="book_meeting")
+model = decision["model_id"]       # Selected based on outcomes
+tool = decision.get("tool_id")     # If tool routing enabled
+print(decision["exploration"])     # True if exploring new paths
+```
+
+### Goal Context
+
+Tag traces with goals for outcome tracking:
+
+```python
+from kalibr import goal, set_goal, get_goal, clear_goal
+
+# Context manager (recommended)
+with goal("book_meeting"):
+    response = openai.chat.completions.create(...)
+
+# Or manual control
+set_goal("book_meeting")
+response = openai.chat.completions.create(...)
+clear_goal()
+```
+
 ## TraceCapsule - Cross-Agent Tracing
 
 Propagate trace context across agent boundaries:
@@ -226,20 +261,20 @@ Configure via environment variables:
 ## CLI Commands
 
 ```bash
-# Serve your app with tracing
-kalibr serve myapp.py
-
-# Run with managed runtime
-kalibr run myapp.py --port 8000
-
-# Deploy to cloud platforms
-kalibr deploy myapp.py --runtime fly.io
-
-# Fetch trace capsule by ID
-kalibr capsule <trace-id>
-
 # Show version
 kalibr version
+
+# Validate configuration
+kalibr validate
+
+# Check connection status
+kalibr status
+
+# Package for deployment
+kalibr package
+
+# Update schemas
+kalibr update_schemas
 ```
 
 ## Supported Providers
