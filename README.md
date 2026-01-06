@@ -252,7 +252,7 @@ Configure via environment variables:
 | `KALIBR_API_KEY` | API key for authentication | *Required* |
 | `KALIBR_TENANT_ID` | Tenant identifier | `default` |
 | `KALIBR_COLLECTOR_URL` | Collector endpoint URL | `https://api.kalibr.systems/api/ingest` |
-| `KALIBR_INTELLIGENCE_URL` | Intelligence API URL | `https://kalibr-intelligence.fly.dev` |
+| `KALIBR_INTELLIGENCE_URL` | Intelligence API URL | `https://dashboard.kalibr.systems/intelligence` |
 | `KALIBR_SERVICE_NAME` | Service name for spans | `kalibr-app` |
 | `KALIBR_ENVIRONMENT` | Environment (prod/staging/dev) | `prod` |
 | `KALIBR_WORKFLOW_ID` | Workflow identifier | `default` |
