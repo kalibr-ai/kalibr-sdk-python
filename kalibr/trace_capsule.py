@@ -4,13 +4,16 @@ Kalibr Trace Capsule - Portable JSON payload for cross-MCP trace propagation.
 A capsule carries observability context across agent hops, maintaining a rolling
 window of recent operations and aggregate metrics.
 
+Thread-safety: All mutable operations are protected by a lock for safe
+concurrent access in multi-threaded environments.
+
 Usage:
     from kalibr.trace_capsule import TraceCapsule
 
     # Create new capsule
     capsule = TraceCapsule()
 
-    # Append hop
+    # Append hop (thread-safe)
     capsule.append_hop({
         "provider": "openai",
         "operation": "summarize",
@@ -28,6 +31,7 @@ Usage:
 """
 
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -74,6 +78,9 @@ class TraceCapsule:
             context_token: Context token for this runtime session (Phase 3C)
             parent_context_token: Parent runtime's context token (Phase 3C)
         """
+        # Thread-safety lock for mutable operations
+        self._lock = threading.Lock()
+        
         self.trace_id = trace_id or str(uuid.uuid4())
         self.timestamp = datetime.now(timezone.utc).isoformat()
         self.aggregate_cost_usd = aggregate_cost_usd
@@ -87,7 +94,7 @@ class TraceCapsule:
         self.parent_context_token = parent_context_token
 
     def append_hop(self, hop: Dict[str, Any]) -> None:
-        """Append a new hop to the capsule.
+        """Append a new hop to the capsule (thread-safe).
 
         Maintains a rolling window of last N hops to keep payload compact.
         Updates aggregate metrics automatically.
@@ -111,95 +118,100 @@ class TraceCapsule:
                 "agent_name": "code-writer"
             })
         """
-        # Add hop_index
-        hop["hop_index"] = len(self.last_n_hops)
+        with self._lock:
+            # Add hop_index (now atomic with append)
+            hop["hop_index"] = len(self.last_n_hops)
 
-        # Append to history
-        self.last_n_hops.append(hop)
+            # Append to history
+            self.last_n_hops.append(hop)
 
-        # Maintain rolling window (keep last N hops)
-        if len(self.last_n_hops) > self.MAX_HOPS:
-            self.last_n_hops.pop(0)
+            # Maintain rolling window (keep last N hops)
+            if len(self.last_n_hops) > self.MAX_HOPS:
+                self.last_n_hops.pop(0)
 
-        # Update aggregates
-        self.aggregate_cost_usd += hop.get("cost_usd", 0.0)
-        self.aggregate_latency_ms += hop.get("duration_ms", 0.0)
+            # Update aggregates
+            self.aggregate_cost_usd += hop.get("cost_usd", 0.0)
+            self.aggregate_latency_ms += hop.get("duration_ms", 0.0)
 
-        # Update timestamp
-        self.timestamp = datetime.now(timezone.utc).isoformat()
+            # Update timestamp
+            self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def get_last_hop(self) -> Optional[Dict[str, Any]]:
-        """Get the most recent hop.
+        """Get the most recent hop (thread-safe).
 
         Returns:
             Last hop dictionary or None if no hops exist
         """
-        return self.last_n_hops[-1] if self.last_n_hops else None
+        with self._lock:
+            return self.last_n_hops[-1].copy() if self.last_n_hops else None
 
     def get_hop_count(self) -> int:
-        """Get total number of hops in capsule.
+        """Get total number of hops in capsule (thread-safe).
 
         Returns:
             Number of hops in the rolling window
         """
-        return len(self.last_n_hops)
+        with self._lock:
+            return len(self.last_n_hops)
 
     def to_json(self) -> str:
-        """Serialize capsule to JSON string for HTTP header transmission.
+        """Serialize capsule to JSON string for HTTP header transmission (thread-safe).
 
         Returns:
             Compact JSON string representation
         """
-        data = {
-            "trace_id": self.trace_id,
-            "timestamp": self.timestamp,
-            "aggregate_cost_usd": round(self.aggregate_cost_usd, 6),
-            "aggregate_latency_ms": round(self.aggregate_latency_ms, 2),
-            "last_n_hops": self.last_n_hops,
-        }
+        with self._lock:
+            data = {
+                "trace_id": self.trace_id,
+                "timestamp": self.timestamp,
+                "aggregate_cost_usd": round(self.aggregate_cost_usd, 6),
+                "aggregate_latency_ms": round(self.aggregate_latency_ms, 2),
+                "last_n_hops": list(self.last_n_hops),  # Copy to avoid mutation
+            }
 
-        # Add optional fields only if present
-        if self.tenant_id:
-            data["tenant_id"] = self.tenant_id
-        if self.workflow_id:
-            data["workflow_id"] = self.workflow_id
-        if self.metadata:
-            data["metadata"] = self.metadata
+            # Add optional fields only if present
+            if self.tenant_id:
+                data["tenant_id"] = self.tenant_id
+            if self.workflow_id:
+                data["workflow_id"] = self.workflow_id
+            if self.metadata:
+                data["metadata"] = dict(self.metadata)  # Copy
 
-        # Phase 3C: Include context tokens
-        if self.context_token:
-            data["context_token"] = self.context_token
-        if self.parent_context_token:
-            data["parent_context_token"] = self.parent_context_token
+            # Phase 3C: Include context tokens
+            if self.context_token:
+                data["context_token"] = self.context_token
+            if self.parent_context_token:
+                data["parent_context_token"] = self.parent_context_token
 
         return json.dumps(data, separators=(",", ":"))  # Compact JSON
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert capsule to dictionary.
+        """Convert capsule to dictionary (thread-safe).
 
         Returns:
             Dictionary representation of capsule
         """
-        data = {
-            "trace_id": self.trace_id,
-            "timestamp": self.timestamp,
-            "aggregate_cost_usd": self.aggregate_cost_usd,
-            "aggregate_latency_ms": self.aggregate_latency_ms,
-            "last_n_hops": self.last_n_hops,
-        }
+        with self._lock:
+            data = {
+                "trace_id": self.trace_id,
+                "timestamp": self.timestamp,
+                "aggregate_cost_usd": self.aggregate_cost_usd,
+                "aggregate_latency_ms": self.aggregate_latency_ms,
+                "last_n_hops": list(self.last_n_hops),  # Copy to avoid mutation
+            }
 
-        if self.tenant_id:
-            data["tenant_id"] = self.tenant_id
-        if self.workflow_id:
-            data["workflow_id"] = self.workflow_id
-        if self.metadata:
-            data["metadata"] = self.metadata
+            if self.tenant_id:
+                data["tenant_id"] = self.tenant_id
+            if self.workflow_id:
+                data["workflow_id"] = self.workflow_id
+            if self.metadata:
+                data["metadata"] = dict(self.metadata)  # Copy
 
-        # Phase 3C: Include context tokens
-        if self.context_token:
-            data["context_token"] = self.context_token
-        if self.parent_context_token:
-            data["parent_context_token"] = self.parent_context_token
+            # Phase 3C: Include context tokens
+            if self.context_token:
+                data["context_token"] = self.context_token
+            if self.parent_context_token:
+                data["parent_context_token"] = self.parent_context_token
 
         return data
 
