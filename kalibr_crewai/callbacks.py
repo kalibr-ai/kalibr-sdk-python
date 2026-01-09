@@ -60,6 +60,72 @@ def _get_provider_from_model(model: str) -> str:
         return "openai"
 
 
+def _extract_model_from_agent(agent) -> tuple[str, str]:
+    """Extract model name and provider from agent's LLM config.
+
+    Args:
+        agent: CrewAI agent instance
+
+    Returns:
+        Tuple of (model_name, provider)
+    """
+    model_name = "unknown"
+    provider = "openai"
+
+    if not hasattr(agent, "llm"):
+        return model_name, provider
+
+    llm = agent.llm
+
+    # Case 1: LLM is a string like "openai/gpt-4o-mini" or "gpt-4"
+    if isinstance(llm, str):
+        if "/" in llm:
+            parts = llm.split("/", 1)
+            provider = parts[0]
+            model_name = parts[1]
+        else:
+            model_name = llm
+            provider = _get_provider_from_model(llm)
+        return model_name, provider
+
+    # Case 2: LLM has model or model_name attribute
+    if hasattr(llm, "model"):
+        model_name = str(llm.model)
+    elif hasattr(llm, "model_name"):
+        model_name = str(llm.model_name)
+
+    # Parse provider from model string if it contains "/"
+    if "/" in model_name:
+        parts = model_name.split("/", 1)
+        provider = parts[0]
+        model_name = parts[1]
+    else:
+        provider = _get_provider_from_model(model_name)
+
+    return model_name, provider
+
+
+def _calculate_cost(provider: str, model: str, input_tokens: int, output_tokens: int) -> float:
+    """Calculate cost using CostAdapterFactory.
+
+    Args:
+        provider: Provider name (openai, anthropic, etc.)
+        model: Model name
+        input_tokens: Number of input tokens
+        output_tokens: Number of output tokens
+
+    Returns:
+        Cost in USD
+    """
+    if CostAdapterFactory is None:
+        return 0.0
+
+    try:
+        return CostAdapterFactory.compute_cost(provider, model, input_tokens, output_tokens)
+    except Exception:
+        return 0.0
+
+
 class EventBatcher:
     """Shared event batching for callbacks."""
 
@@ -198,6 +264,7 @@ class KalibrAgentCallback:
         service: Service name
         workflow_id: Workflow identifier
         metadata: Additional metadata for all events
+        agent: Optional agent reference for model extraction
 
     Usage:
         from kalibr_crewai import KalibrAgentCallback
@@ -210,6 +277,7 @@ class KalibrAgentCallback:
             goal="Find information",
             step_callback=callback,
         )
+        callback.set_agent(agent)  # Set agent reference for model extraction
     """
 
     def __init__(
@@ -221,6 +289,7 @@ class KalibrAgentCallback:
         service: Optional[str] = None,
         workflow_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        agent: Optional[Any] = None,
     ):
         self.api_key = api_key or os.getenv("KALIBR_API_KEY", "")
         self.endpoint = endpoint or os.getenv(
@@ -232,6 +301,7 @@ class KalibrAgentCallback:
         self.service = service or os.getenv("KALIBR_SERVICE", "crewai-app")
         self.workflow_id = workflow_id or os.getenv("KALIBR_WORKFLOW_ID", "default-workflow")
         self.default_metadata = metadata or {}
+        self._agent = agent
 
         # Get shared batcher
         self._batcher = EventBatcher.get_instance(
@@ -243,6 +313,14 @@ class KalibrAgentCallback:
         self._trace_id: Optional[str] = None
         self._agent_span_id: Optional[str] = None
         self._step_count: int = 0
+
+    def set_agent(self, agent: Any) -> None:
+        """Set the agent reference for model extraction.
+
+        Args:
+            agent: CrewAI agent instance
+        """
+        self._agent = agent
 
     def __call__(self, step_output: Any) -> None:
         """Called after each agent step.
@@ -270,6 +348,12 @@ class KalibrAgentCallback:
             self._agent_span_id = str(uuid.uuid4())
 
         span_id = str(uuid.uuid4())
+
+        # Extract model from agent if available
+        model_name = "unknown"
+        provider = "openai"
+        if self._agent:
+            model_name, provider = _extract_model_from_agent(self._agent)
 
         # Extract step information
         step_type = "agent_step"
@@ -307,8 +391,11 @@ class KalibrAgentCallback:
             output_text = str(step_output)
 
         # Count tokens
-        input_tokens = _count_tokens(tool_input or "", "gpt-4")
-        output_tokens = _count_tokens(output_text, "gpt-4")
+        input_tokens = _count_tokens(tool_input or "", model_name)
+        output_tokens = _count_tokens(output_text, model_name)
+
+        # Calculate cost using CostAdapterFactory
+        cost_usd = _calculate_cost(provider, model_name, input_tokens, output_tokens)
 
         # Build event
         event = {
@@ -318,9 +405,9 @@ class KalibrAgentCallback:
             "parent_span_id": self._agent_span_id,
             "tenant_id": self.tenant_id,
             "workflow_id": self.workflow_id,
-            "provider": "crewai",
-            "model_id": "agent",
-            "model_name": "crewai-agent",
+            "provider": provider,
+            "model_id": model_name,
+            "model_name": model_name,
             "operation": operation,
             "endpoint": operation,
             "duration_ms": 0,  # Step timing not available
@@ -328,8 +415,8 @@ class KalibrAgentCallback:
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
-            "cost_usd": 0.0,  # Cost tracked at LLM level
-            "total_cost_usd": 0.0,
+            "cost_usd": cost_usd,
+            "total_cost_usd": cost_usd,
             "status": status,
             "timestamp": now.isoformat(),
             "ts_start": now.isoformat(),
@@ -376,6 +463,7 @@ class KalibrTaskCallback:
         service: Service name
         workflow_id: Workflow identifier
         metadata: Additional metadata for all events
+        agent: Optional agent reference for model extraction
 
     Usage:
         from kalibr_crewai import KalibrTaskCallback
@@ -388,6 +476,7 @@ class KalibrTaskCallback:
             agent=my_agent,
             callback=callback,
         )
+        callback.set_agent(my_agent)  # Set agent reference for model extraction
     """
 
     def __init__(
@@ -399,6 +488,7 @@ class KalibrTaskCallback:
         service: Optional[str] = None,
         workflow_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        agent: Optional[Any] = None,
     ):
         self.api_key = api_key or os.getenv("KALIBR_API_KEY", "")
         self.endpoint = endpoint or os.getenv(
@@ -410,6 +500,7 @@ class KalibrTaskCallback:
         self.service = service or os.getenv("KALIBR_SERVICE", "crewai-app")
         self.workflow_id = workflow_id or os.getenv("KALIBR_WORKFLOW_ID", "default-workflow")
         self.default_metadata = metadata or {}
+        self._agent = agent
 
         # Get shared batcher
         self._batcher = EventBatcher.get_instance(
@@ -420,6 +511,14 @@ class KalibrTaskCallback:
         # Trace context
         self._trace_id: Optional[str] = None
         self._crew_span_id: Optional[str] = None
+
+    def set_agent(self, agent: Any) -> None:
+        """Set the agent reference for model extraction.
+
+        Args:
+            agent: CrewAI agent instance
+        """
+        self._agent = agent
 
     def __call__(self, task_output: Any) -> None:
         """Called when task completes.
@@ -467,9 +566,18 @@ class KalibrTaskCallback:
         if hasattr(task_output, "agent"):
             agent_role = str(task_output.agent)
 
+        # Extract model from agent if available
+        model_name = "unknown"
+        provider = "openai"
+        if self._agent:
+            model_name, provider = _extract_model_from_agent(self._agent)
+
         # Token counting
-        input_tokens = _count_tokens(description, "gpt-4")
-        output_tokens = _count_tokens(raw_output, "gpt-4")
+        input_tokens = _count_tokens(description, model_name)
+        output_tokens = _count_tokens(raw_output, model_name)
+
+        # Calculate cost using CostAdapterFactory
+        cost_usd = _calculate_cost(provider, model_name, input_tokens, output_tokens)
 
         # Build operation name from description
         operation = "task_complete"
@@ -486,9 +594,9 @@ class KalibrTaskCallback:
             "parent_span_id": self._crew_span_id,
             "tenant_id": self.tenant_id,
             "workflow_id": self.workflow_id,
-            "provider": "crewai",
-            "model_id": "task",
-            "model_name": agent_role,
+            "provider": provider,
+            "model_id": model_name,
+            "model_name": model_name,
             "operation": operation,
             "endpoint": "task_complete",
             "duration_ms": 0,  # Task timing not available in callback
@@ -496,8 +604,8 @@ class KalibrTaskCallback:
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": input_tokens + output_tokens,
-            "cost_usd": 0.0,  # Cost tracked at LLM level
-            "total_cost_usd": 0.0,
+            "cost_usd": cost_usd,
+            "total_cost_usd": cost_usd,
             "status": "success",
             "timestamp": now.isoformat(),
             "ts_start": now.isoformat(),

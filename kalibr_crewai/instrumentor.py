@@ -21,6 +21,72 @@ except ImportError:
     CostAdapterFactory = None
 
 
+def _extract_model_from_agent(agent) -> tuple[str, str]:
+    """Extract model name and provider from agent's LLM config.
+
+    Args:
+        agent: CrewAI agent instance
+
+    Returns:
+        Tuple of (model_name, provider)
+    """
+    model_name = "unknown"
+    provider = "openai"
+
+    if not hasattr(agent, "llm"):
+        return model_name, provider
+
+    llm = agent.llm
+
+    # Case 1: LLM is a string like "openai/gpt-4o-mini" or "gpt-4"
+    if isinstance(llm, str):
+        if "/" in llm:
+            parts = llm.split("/", 1)
+            provider = parts[0]
+            model_name = parts[1]
+        else:
+            model_name = llm
+            provider = _get_provider_from_model(llm)
+        return model_name, provider
+
+    # Case 2: LLM has model or model_name attribute
+    if hasattr(llm, "model"):
+        model_name = str(llm.model)
+    elif hasattr(llm, "model_name"):
+        model_name = str(llm.model_name)
+
+    # Parse provider from model string if it contains "/"
+    if "/" in model_name:
+        parts = model_name.split("/", 1)
+        provider = parts[0]
+        model_name = parts[1]
+    else:
+        provider = _get_provider_from_model(model_name)
+
+    return model_name, provider
+
+
+def _calculate_cost(provider: str, model: str, input_tokens: int, output_tokens: int) -> float:
+    """Calculate cost using CostAdapterFactory.
+
+    Args:
+        provider: Provider name (openai, anthropic, etc.)
+        model: Model name
+        input_tokens: Number of input tokens
+        output_tokens: Number of output tokens
+
+    Returns:
+        Cost in USD
+    """
+    if CostAdapterFactory is None:
+        return 0.0
+
+    try:
+        return CostAdapterFactory.compute_cost(provider, model, input_tokens, output_tokens)
+    except Exception:
+        return 0.0
+
+
 class KalibrCrewAIInstrumentor:
     """Auto-instrumentation for CrewAI.
 
@@ -341,6 +407,9 @@ class KalibrCrewAIInstrumentor:
             role = getattr(agent_self, "role", "unknown")
             goal = getattr(agent_self, "goal", "")
 
+            # Extract model from agent's LLM config
+            model_name, provider = _extract_model_from_agent(agent_self)
+
             # Get task info
             task_description = ""
             if hasattr(task, "description"):
@@ -370,8 +439,11 @@ class KalibrCrewAIInstrumentor:
                     output_preview = str(result)[:500]
 
                 # Token estimation
-                input_tokens = _count_tokens(task_description + goal, "gpt-4")
-                output_tokens = _count_tokens(output_preview or "", "gpt-4")
+                input_tokens = _count_tokens(task_description + goal, model_name)
+                output_tokens = _count_tokens(output_preview or "", model_name)
+
+                # Calculate cost using CostAdapterFactory
+                cost_usd = _calculate_cost(provider, model_name, input_tokens, output_tokens)
 
                 event = {
                     "schema_version": "1.0",
@@ -380,9 +452,9 @@ class KalibrCrewAIInstrumentor:
                     "parent_span_id": None,
                     "tenant_id": instrumentor.tenant_id,
                     "workflow_id": instrumentor.workflow_id,
-                    "provider": "crewai",
-                    "model_id": "agent",
-                    "model_name": role,
+                    "provider": provider,
+                    "model_id": model_name,
+                    "model_name": model_name,
                     "operation": f"agent:{role}",
                     "endpoint": "agent.execute_task",
                     "duration_ms": duration_ms,
@@ -390,8 +462,8 @@ class KalibrCrewAIInstrumentor:
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "total_tokens": input_tokens + output_tokens,
-                    "cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
+                    "cost_usd": cost_usd,
+                    "total_cost_usd": cost_usd,
                     "status": status,
                     "error_type": error_type,
                     "error_message": error_message,
@@ -430,6 +502,13 @@ class KalibrCrewAIInstrumentor:
             description = getattr(task_self, "description", "")
             expected_output = getattr(task_self, "expected_output", "")
 
+            # Try to extract model from task's agent
+            model_name = "unknown"
+            provider = "openai"
+            agent = getattr(task_self, "agent", None)
+            if agent:
+                model_name, provider = _extract_model_from_agent(agent)
+
             status = "success"
             error_type = None
             error_message = None
@@ -456,8 +535,11 @@ class KalibrCrewAIInstrumentor:
                     else:
                         output_preview = str(result)[:500]
 
-                input_tokens = _count_tokens(description, "gpt-4")
-                output_tokens = _count_tokens(output_preview or "", "gpt-4")
+                input_tokens = _count_tokens(description, model_name)
+                output_tokens = _count_tokens(output_preview or "", model_name)
+
+                # Calculate cost using CostAdapterFactory
+                cost_usd = _calculate_cost(provider, model_name, input_tokens, output_tokens)
 
                 event = {
                     "schema_version": "1.0",
@@ -466,9 +548,9 @@ class KalibrCrewAIInstrumentor:
                     "parent_span_id": None,
                     "tenant_id": instrumentor.tenant_id,
                     "workflow_id": instrumentor.workflow_id,
-                    "provider": "crewai",
-                    "model_id": "task",
-                    "model_name": "crewai-task",
+                    "provider": provider,
+                    "model_id": model_name,
+                    "model_name": model_name,
                     "operation": f"task:{description[:30]}..." if len(description) > 30 else f"task:{description}",
                     "endpoint": "task.execute_sync",
                     "duration_ms": duration_ms,
@@ -476,8 +558,8 @@ class KalibrCrewAIInstrumentor:
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "total_tokens": input_tokens + output_tokens,
-                    "cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
+                    "cost_usd": cost_usd,
+                    "total_cost_usd": cost_usd,
                     "status": status,
                     "error_type": error_type,
                     "error_message": error_message,
