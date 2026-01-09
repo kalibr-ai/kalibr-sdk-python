@@ -3,6 +3,8 @@ OpenAI SDK Instrumentation
 
 Monkey-patches the OpenAI SDK to automatically emit OpenTelemetry spans
 for all chat completion API calls.
+
+Note: Cost calculation uses centralized pricing from kalibr.pricing module.
 """
 
 import time
@@ -11,44 +13,32 @@ from typing import Any, Dict, Optional
 
 from opentelemetry.trace import SpanKind
 
-from .base import BaseCostAdapter, BaseInstrumentation
+from .base import BaseInstrumentation
+
+# Import centralized pricing
+from kalibr.pricing import calculate_cost as _calculate_cost
 
 
-class OpenAICostAdapter(BaseCostAdapter):
-    """Cost calculation adapter for OpenAI models"""
-
-    # Pricing per 1K tokens (USD) - Updated November 2025
-    PRICING = {
-        # GPT-5 models
-        "gpt-5": {"input": 0.005, "output": 0.015},
-        "gpt-5-turbo": {"input": 0.0025, "output": 0.0075},
-        # GPT-4 models
-        "gpt-4": {"input": 0.03, "output": 0.06},
-        "gpt-4-turbo": {"input": 0.01, "output": 0.03},
-        "gpt-4o": {"input": 0.0025, "output": 0.01},
-        "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
-        # GPT-3.5 models
-        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-        "gpt-3.5-turbo-16k": {"input": 0.001, "output": 0.002},
-    }
+class OpenAICostAdapter:
+    """Cost calculation adapter for OpenAI models.
+    
+    Uses centralized pricing from kalibr.pricing module.
+    """
 
     def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
-        """Calculate cost in USD for an OpenAI API call"""
-        # Normalize model name (remove version suffixes)
-        base_model = model.split("-2")[0]  # Remove date suffixes like -20240101
-
-        pricing = self.get_pricing(base_model)
-        if not pricing:
-            # Default to GPT-4 pricing if unknown
-            pricing = {"input": 0.03, "output": 0.06}
-
+        """Calculate cost in USD for an OpenAI API call.
+        
+        Args:
+            model: Model name (e.g., 'gpt-4o', 'gpt-4-turbo')
+            usage: Dict with 'prompt_tokens' and 'completion_tokens'
+            
+        Returns:
+            Cost in USD, rounded to 6 decimal places
+        """
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
-
-        input_cost = (prompt_tokens / 1000) * pricing["input"]
-        output_cost = (completion_tokens / 1000) * pricing["output"]
-
-        return round(input_cost + output_cost, 6)
+        
+        return _calculate_cost("openai", model, prompt_tokens, completion_tokens)
 
 
 class OpenAIInstrumentation(BaseInstrumentation):

@@ -3,6 +3,8 @@ Google Generative AI SDK Instrumentation
 
 Monkey-patches the Google Generative AI SDK to automatically emit OpenTelemetry spans
 for all content generation API calls.
+
+Note: Cost calculation uses centralized pricing from kalibr.pricing module.
 """
 
 import time
@@ -11,55 +13,32 @@ from typing import Any, Dict, Optional
 
 from opentelemetry.trace import SpanKind
 
-from .base import BaseCostAdapter, BaseInstrumentation
+from .base import BaseInstrumentation
+
+# Import centralized pricing
+from kalibr.pricing import calculate_cost as _calculate_cost
 
 
-class GoogleCostAdapter(BaseCostAdapter):
-    """Cost calculation adapter for Google Generative AI models"""
-
-    # Pricing per 1K tokens (USD) - Updated November 2025
-    PRICING = {
-        # Gemini 2.5 models
-        "gemini-2.5-pro": {"input": 0.00125, "output": 0.005},
-        "gemini-2.5-flash": {"input": 0.000075, "output": 0.0003},
-        # Gemini 2.0 models
-        "gemini-2.0-flash": {"input": 0.000075, "output": 0.0003},
-        "gemini-2.0-flash-thinking": {"input": 0.000075, "output": 0.0003},
-        # Gemini 1.5 models
-        "gemini-1.5-pro": {"input": 0.00125, "output": 0.005},
-        "gemini-1.5-flash": {"input": 0.000075, "output": 0.0003},
-        "gemini-1.5-flash-8b": {"input": 0.0000375, "output": 0.00015},
-        # Gemini 1.0 models
-        "gemini-1.0-pro": {"input": 0.0005, "output": 0.0015},
-        "gemini-pro": {"input": 0.0005, "output": 0.0015},  # Alias
-    }
+class GoogleCostAdapter:
+    """Cost calculation adapter for Google Generative AI models.
+    
+    Uses centralized pricing from kalibr.pricing module.
+    """
 
     def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
-        """Calculate cost in USD for a Google Generative AI API call"""
-        # Normalize model name
-        base_model = model.lower()
-
-        # Try exact match first
-        pricing = self.get_pricing(base_model)
-
-        # Try fuzzy matching for versioned models
-        if not pricing:
-            for known_model in self.PRICING.keys():
-                if known_model in base_model or base_model in known_model:
-                    pricing = self.PRICING[known_model]
-                    break
-
-        if not pricing:
-            # Default to Gemini 1.5 Pro pricing if unknown
-            pricing = {"input": 0.00125, "output": 0.005}
-
+        """Calculate cost in USD for a Google Generative AI API call.
+        
+        Args:
+            model: Model name (e.g., 'gemini-1.5-pro', 'gemini-2.0-flash')
+            usage: Dict with 'prompt_tokens' and 'completion_tokens'
+            
+        Returns:
+            Cost in USD, rounded to 6 decimal places
+        """
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
-
-        input_cost = (prompt_tokens / 1000) * pricing["input"]
-        output_cost = (completion_tokens / 1000) * pricing["output"]
-
-        return round(input_cost + output_cost, 6)
+        
+        return _calculate_cost("google", model, prompt_tokens, completion_tokens)
 
 
 class GoogleInstrumentation(BaseInstrumentation):

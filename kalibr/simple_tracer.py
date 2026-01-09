@@ -155,21 +155,17 @@ def trace(
             actual_input_tokens = input_tokens or kwargs.get("input_tokens", 1000)
             actual_output_tokens = output_tokens or kwargs.get("output_tokens", 500)
 
-            # Cost calculation (simplified pricing)
-            # OpenAI GPT-4o: ~$2.50/1M input, ~$10/1M output
-            # Anthropic Claude-3-Sonnet: ~$3/1M input, ~$15/1M output
-            pricing_map = {
-                "openai": {"gpt-4o": 0.00000250, "gpt-4": 0.00003000},
-                "anthropic": {"claude-3-sonnet": 0.00000300, "claude-3-opus": 0.00001500},
-                "google": {"gemini-pro": 0.00000125},
-            }
-
-            # Get unit price
-            provider_pricing = pricing_map.get(provider, {})
-            unit_price_usd = provider_pricing.get(model, 0.00002000)  # Default $0.02/1M
-
-            # Calculate total cost
-            total_cost_usd = (actual_input_tokens + actual_output_tokens) * unit_price_usd
+            # Cost calculation using centralized pricing
+            try:
+                from kalibr.pricing import calculate_cost as calc_cost
+                total_cost_usd = calc_cost(provider, model, actual_input_tokens, actual_output_tokens)
+            except ImportError:
+                # Fallback if pricing module not available
+                total_cost_usd = 0.0
+            
+            # Calculate unit price for backwards compatibility
+            total_tokens = actual_input_tokens + actual_output_tokens
+            unit_price_usd = total_cost_usd / total_tokens if total_tokens > 0 else 0.0
 
             # Build payload
             payload = {

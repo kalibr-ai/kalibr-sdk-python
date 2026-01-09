@@ -3,6 +3,8 @@ Anthropic SDK Instrumentation
 
 Monkey-patches the Anthropic SDK to automatically emit OpenTelemetry spans
 for all message API calls.
+
+Note: Cost calculation uses centralized pricing from kalibr.pricing module.
 """
 
 import time
@@ -11,56 +13,32 @@ from typing import Any, Dict, Optional
 
 from opentelemetry.trace import SpanKind
 
-from .base import BaseCostAdapter, BaseInstrumentation
+from .base import BaseInstrumentation
+
+# Import centralized pricing
+from kalibr.pricing import calculate_cost as _calculate_cost
 
 
-class AnthropicCostAdapter(BaseCostAdapter):
-    """Cost calculation adapter for Anthropic models"""
-
-    # Pricing per 1K tokens (USD) - Updated November 2025
-    PRICING = {
-        # Claude 4 models
-        "claude-4-opus": {"input": 0.015, "output": 0.075},
-        "claude-4-sonnet": {"input": 0.003, "output": 0.015},
-        # Claude 3 models (Sonnet 4 is actually Claude 3.7)
-        "claude-sonnet-4": {"input": 0.003, "output": 0.015},
-        "claude-3-7-sonnet": {"input": 0.003, "output": 0.015},
-        "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
-        "claude-3-opus": {"input": 0.015, "output": 0.075},
-        "claude-3-sonnet": {"input": 0.003, "output": 0.015},
-        "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
-        # Claude 2 models
-        "claude-2.1": {"input": 0.008, "output": 0.024},
-        "claude-2.0": {"input": 0.008, "output": 0.024},
-        "claude-instant-1.2": {"input": 0.0008, "output": 0.0024},
-    }
+class AnthropicCostAdapter:
+    """Cost calculation adapter for Anthropic models.
+    
+    Uses centralized pricing from kalibr.pricing module.
+    """
 
     def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
-        """Calculate cost in USD for an Anthropic API call"""
-        # Normalize model name
-        base_model = model.lower()
-
-        # Try exact match first
-        pricing = self.get_pricing(base_model)
-
-        # Try fuzzy matching for versioned models
-        if not pricing:
-            for known_model in self.PRICING.keys():
-                if known_model in base_model or base_model in known_model:
-                    pricing = self.PRICING[known_model]
-                    break
-
-        if not pricing:
-            # Default to Claude 3 Sonnet pricing if unknown
-            pricing = {"input": 0.003, "output": 0.015}
-
+        """Calculate cost in USD for an Anthropic API call.
+        
+        Args:
+            model: Model name (e.g., 'claude-3-5-sonnet', 'claude-3-haiku')
+            usage: Dict with 'input_tokens' and 'output_tokens'
+            
+        Returns:
+            Cost in USD, rounded to 6 decimal places
+        """
         input_tokens = usage.get("input_tokens", 0)
         output_tokens = usage.get("output_tokens", 0)
-
-        input_cost = (input_tokens / 1000) * pricing["input"]
-        output_cost = (output_tokens / 1000) * pricing["output"]
-
-        return round(input_cost + output_cost, 6)
+        
+        return _calculate_cost("anthropic", model, input_tokens, output_tokens)
 
 
 class AnthropicInstrumentation(BaseInstrumentation):
