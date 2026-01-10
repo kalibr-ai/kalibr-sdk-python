@@ -150,6 +150,10 @@ class KalibrCrewAIInstrumentor:
         # Instrumentation state
         self._is_instrumented = False
 
+        # Accumulated metrics for crew-level aggregation
+        self._accumulated_tokens = {"input": 0, "output": 0}
+        self._accumulated_cost = 0.0
+
     def instrument(self) -> bool:
         """Instrument CrewAI classes.
 
@@ -236,10 +240,21 @@ class KalibrCrewAIInstrumentor:
             start_time = time.time()
             ts_start = datetime.now(timezone.utc)
 
+            # Reset accumulators before crew execution
+            instrumentor._accumulated_tokens = {"input": 0, "output": 0}
+            instrumentor._accumulated_cost = 0.0
+
             # Capture crew info
             crew_name = getattr(crew_self, "name", None) or "unnamed_crew"
-            agent_count = len(getattr(crew_self, "agents", []))
+            agents = getattr(crew_self, "agents", [])
+            agent_count = len(agents)
             task_count = len(getattr(crew_self, "tasks", []))
+
+            # Extract model from first agent if available
+            model_name = "unknown"
+            provider = "crewai"
+            if agents:
+                model_name, provider = _extract_model_from_agent(agents[0])
 
             status = "success"
             error_type = None
@@ -265,7 +280,13 @@ class KalibrCrewAIInstrumentor:
                 if instrumentor.capture_output and result is not None:
                     output_preview = str(result)[:500]
 
-                # Create event
+                # Get accumulated metrics from child agent/task executions
+                input_tokens = instrumentor._accumulated_tokens["input"]
+                output_tokens = instrumentor._accumulated_tokens["output"]
+                total_tokens = input_tokens + output_tokens
+                cost_usd = instrumentor._accumulated_cost
+
+                # Create event with aggregated metrics
                 event = {
                     "schema_version": "1.0",
                     "trace_id": trace_id,
@@ -273,18 +294,18 @@ class KalibrCrewAIInstrumentor:
                     "parent_span_id": None,
                     "tenant_id": instrumentor.tenant_id,
                     "workflow_id": instrumentor.workflow_id,
-                    "provider": "crewai",
-                    "model_id": "crew",
-                    "model_name": crew_name,
+                    "provider": provider,
+                    "model_id": model_name,
+                    "model_name": model_name,
                     "operation": f"crew:{crew_name}",
                     "endpoint": "crew.kickoff",
                     "duration_ms": duration_ms,
                     "latency_ms": duration_ms,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                    "cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "cost_usd": cost_usd,
+                    "total_cost_usd": cost_usd,
                     "status": status,
                     "error_type": error_type,
                     "error_message": error_message,
@@ -321,9 +342,20 @@ class KalibrCrewAIInstrumentor:
             start_time = time.time()
             ts_start = datetime.now(timezone.utc)
 
+            # Reset accumulators before crew execution
+            instrumentor._accumulated_tokens = {"input": 0, "output": 0}
+            instrumentor._accumulated_cost = 0.0
+
             crew_name = getattr(crew_self, "name", None) or "unnamed_crew"
-            agent_count = len(getattr(crew_self, "agents", []))
+            agents = getattr(crew_self, "agents", [])
+            agent_count = len(agents)
             task_count = len(getattr(crew_self, "tasks", []))
+
+            # Extract model from first agent if available
+            model_name = "unknown"
+            provider = "crewai"
+            if agents:
+                model_name, provider = _extract_model_from_agent(agents[0])
 
             status = "success"
             error_type = None
@@ -348,6 +380,13 @@ class KalibrCrewAIInstrumentor:
                 if instrumentor.capture_output and result is not None:
                     output_preview = str(result)[:500]
 
+                # Get accumulated metrics from child agent/task executions
+                input_tokens = instrumentor._accumulated_tokens["input"]
+                output_tokens = instrumentor._accumulated_tokens["output"]
+                total_tokens = input_tokens + output_tokens
+                cost_usd = instrumentor._accumulated_cost
+
+                # Create event with aggregated metrics
                 event = {
                     "schema_version": "1.0",
                     "trace_id": trace_id,
@@ -355,18 +394,18 @@ class KalibrCrewAIInstrumentor:
                     "parent_span_id": None,
                     "tenant_id": instrumentor.tenant_id,
                     "workflow_id": instrumentor.workflow_id,
-                    "provider": "crewai",
-                    "model_id": "crew",
-                    "model_name": crew_name,
+                    "provider": provider,
+                    "model_id": model_name,
+                    "model_name": model_name,
                     "operation": f"crew:{crew_name}",
                     "endpoint": "crew.kickoff_async",
                     "duration_ms": duration_ms,
                     "latency_ms": duration_ms,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                    "cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens,
+                    "cost_usd": cost_usd,
+                    "total_cost_usd": cost_usd,
                     "status": status,
                     "error_type": error_type,
                     "error_message": error_message,
@@ -444,6 +483,11 @@ class KalibrCrewAIInstrumentor:
 
                 # Calculate cost using CostAdapterFactory
                 cost_usd = _calculate_cost(provider, model_name, input_tokens, output_tokens)
+
+                # Accumulate metrics for crew-level aggregation
+                instrumentor._accumulated_tokens["input"] += input_tokens
+                instrumentor._accumulated_tokens["output"] += output_tokens
+                instrumentor._accumulated_cost += cost_usd
 
                 event = {
                     "schema_version": "1.0",
@@ -540,6 +584,11 @@ class KalibrCrewAIInstrumentor:
 
                 # Calculate cost using CostAdapterFactory
                 cost_usd = _calculate_cost(provider, model_name, input_tokens, output_tokens)
+
+                # Accumulate metrics for crew-level aggregation
+                instrumentor._accumulated_tokens["input"] += input_tokens
+                instrumentor._accumulated_tokens["output"] += output_tokens
+                instrumentor._accumulated_cost += cost_usd
 
                 event = {
                     "schema_version": "1.0",
