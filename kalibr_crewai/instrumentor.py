@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from functools import wraps
 from typing import Any, Callable, Dict, List, Optional
 
+from opentelemetry import trace as otel_trace
+
 from .callbacks import EventBatcher, _count_tokens, _get_provider_from_model
 
 # Import Kalibr cost adapters
@@ -275,6 +277,21 @@ class KalibrCrewAIInstrumentor:
                 duration_ms = int((time.time() - start_time) * 1000)
                 ts_end = datetime.now(timezone.utc)
 
+                # Enrich CrewAI's OTel span with Kalibr telemetry
+                try:
+                    current_span = otel_trace.get_current_span()
+                    if current_span and current_span.is_recording():
+                        current_span.set_attribute("kalibr.cost_usd", instrumentor._accumulated_cost)
+                        current_span.set_attribute("kalibr.input_tokens", instrumentor._accumulated_tokens["input"])
+                        current_span.set_attribute("kalibr.output_tokens", instrumentor._accumulated_tokens["output"])
+                        current_span.set_attribute("kalibr.total_tokens", instrumentor._accumulated_tokens["input"] + instrumentor._accumulated_tokens["output"])
+                        current_span.set_attribute("kalibr.model_id", model_name)
+                        current_span.set_attribute("kalibr.provider", provider)
+                        current_span.set_attribute("kalibr.duration_ms", duration_ms)
+                        current_span.set_attribute("kalibr.tenant_id", instrumentor.tenant_id)
+                except Exception:
+                    pass  # Don't fail if span enrichment fails
+
                 # Build output info
                 output_preview = None
                 if instrumentor.capture_output and result is not None:
@@ -375,6 +392,21 @@ class KalibrCrewAIInstrumentor:
             finally:
                 duration_ms = int((time.time() - start_time) * 1000)
                 ts_end = datetime.now(timezone.utc)
+
+                # Enrich CrewAI's OTel span with Kalibr telemetry
+                try:
+                    current_span = otel_trace.get_current_span()
+                    if current_span and current_span.is_recording():
+                        current_span.set_attribute("kalibr.cost_usd", instrumentor._accumulated_cost)
+                        current_span.set_attribute("kalibr.input_tokens", instrumentor._accumulated_tokens["input"])
+                        current_span.set_attribute("kalibr.output_tokens", instrumentor._accumulated_tokens["output"])
+                        current_span.set_attribute("kalibr.total_tokens", instrumentor._accumulated_tokens["input"] + instrumentor._accumulated_tokens["output"])
+                        current_span.set_attribute("kalibr.model_id", model_name)
+                        current_span.set_attribute("kalibr.provider", provider)
+                        current_span.set_attribute("kalibr.duration_ms", duration_ms)
+                        current_span.set_attribute("kalibr.tenant_id", instrumentor.tenant_id)
+                except Exception:
+                    pass  # Don't fail if span enrichment fails
 
                 output_preview = None
                 if instrumentor.capture_output and result is not None:
