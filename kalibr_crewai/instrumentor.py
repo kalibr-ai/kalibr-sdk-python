@@ -238,8 +238,15 @@ class KalibrCrewAIInstrumentor:
 
             # Capture crew info
             crew_name = getattr(crew_self, "name", None) or "unnamed_crew"
-            agent_count = len(getattr(crew_self, "agents", []))
+            agents = getattr(crew_self, "agents", [])
+            agent_count = len(agents)
             task_count = len(getattr(crew_self, "tasks", []))
+
+            # Extract model from first agent if available
+            model_name = "unknown"
+            provider = "crewai"
+            if agents:
+                model_name, provider = _extract_model_from_agent(agents[0])
 
             status = "success"
             error_type = None
@@ -265,7 +272,7 @@ class KalibrCrewAIInstrumentor:
                 if instrumentor.capture_output and result is not None:
                     output_preview = str(result)[:500]
 
-                # Create event
+                # Create event - crew spans are parent spans, child agent/task spans have actual metrics
                 event = {
                     "schema_version": "1.0",
                     "trace_id": trace_id,
@@ -273,18 +280,18 @@ class KalibrCrewAIInstrumentor:
                     "parent_span_id": None,
                     "tenant_id": instrumentor.tenant_id,
                     "workflow_id": instrumentor.workflow_id,
-                    "provider": "crewai",
-                    "model_id": "crew",
-                    "model_name": crew_name,
+                    "provider": provider,
+                    "model_id": model_name,
+                    "model_name": model_name,
                     "operation": f"crew:{crew_name}",
                     "endpoint": "crew.kickoff",
                     "duration_ms": duration_ms,
                     "latency_ms": duration_ms,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                    "cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
+                    "input_tokens": 0,  # Aggregated from child spans
+                    "output_tokens": 0,  # Aggregated from child spans
+                    "total_tokens": 0,  # Aggregated from child spans
+                    "cost_usd": 0.0,  # Aggregated from child spans
+                    "total_cost_usd": 0.0,  # Aggregated from child spans
                     "status": status,
                     "error_type": error_type,
                     "error_message": error_message,
@@ -302,6 +309,7 @@ class KalibrCrewAIInstrumentor:
                         "agent_count": agent_count,
                         "task_count": task_count,
                         "output_preview": output_preview,
+                        "aggregated": False,  # Metrics are in child agent/task spans
                     },
                 }
 
@@ -322,8 +330,15 @@ class KalibrCrewAIInstrumentor:
             ts_start = datetime.now(timezone.utc)
 
             crew_name = getattr(crew_self, "name", None) or "unnamed_crew"
-            agent_count = len(getattr(crew_self, "agents", []))
+            agents = getattr(crew_self, "agents", [])
+            agent_count = len(agents)
             task_count = len(getattr(crew_self, "tasks", []))
+
+            # Extract model from first agent if available
+            model_name = "unknown"
+            provider = "crewai"
+            if agents:
+                model_name, provider = _extract_model_from_agent(agents[0])
 
             status = "success"
             error_type = None
@@ -348,6 +363,7 @@ class KalibrCrewAIInstrumentor:
                 if instrumentor.capture_output and result is not None:
                     output_preview = str(result)[:500]
 
+                # Create event - crew spans are parent spans, child agent/task spans have actual metrics
                 event = {
                     "schema_version": "1.0",
                     "trace_id": trace_id,
@@ -355,18 +371,18 @@ class KalibrCrewAIInstrumentor:
                     "parent_span_id": None,
                     "tenant_id": instrumentor.tenant_id,
                     "workflow_id": instrumentor.workflow_id,
-                    "provider": "crewai",
-                    "model_id": "crew",
-                    "model_name": crew_name,
+                    "provider": provider,
+                    "model_id": model_name,
+                    "model_name": model_name,
                     "operation": f"crew:{crew_name}",
                     "endpoint": "crew.kickoff_async",
                     "duration_ms": duration_ms,
                     "latency_ms": duration_ms,
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                    "total_tokens": 0,
-                    "cost_usd": 0.0,
-                    "total_cost_usd": 0.0,
+                    "input_tokens": 0,  # Aggregated from child spans
+                    "output_tokens": 0,  # Aggregated from child spans
+                    "total_tokens": 0,  # Aggregated from child spans
+                    "cost_usd": 0.0,  # Aggregated from child spans
+                    "total_cost_usd": 0.0,  # Aggregated from child spans
                     "status": status,
                     "error_type": error_type,
                     "error_message": error_message,
@@ -385,6 +401,7 @@ class KalibrCrewAIInstrumentor:
                         "agent_count": agent_count,
                         "task_count": task_count,
                         "output_preview": output_preview,
+                        "aggregated": False,  # Metrics are in child agent/task spans
                     },
                 }
 
