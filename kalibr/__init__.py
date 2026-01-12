@@ -92,6 +92,7 @@ from .intelligence import (
     register_path,
     decide,
 )
+from .router import Router
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
     # Setup OpenTelemetry collector
@@ -163,4 +164,5 @@ __all__ = [
     "get_recommendation",
     "register_path",
     "decide",
+    "Router",
 ]
