@@ -1,4 +1,4 @@
-"""Kalibr LangChain Integration - Observability for LangChain applications.
+"""Kalibr LangChain Integration - Observability and Routing for LangChain applications.
 
 This package provides a callback handler that integrates LangChain with
 Kalibr's observability platform, capturing:
@@ -39,9 +39,11 @@ __version__ = "0.1.0"
 
 from .callback import KalibrCallbackHandler
 from .async_callback import AsyncKalibrCallbackHandler
+from .chat_model import KalibrChatModel
 
 __all__ = [
     "KalibrCallbackHandler",
     "AsyncKalibrCallbackHandler",
+    "KalibrChatModel",
     "__version__",
 ]
