@@ -537,11 +537,11 @@ def get_policy(goal: str, tenant_id: str | None = None, **kwargs) -> dict[str, A
         policy = get_policy(goal="book_meeting")
         model = policy["recommended_model"]
     """
-    client = _get_intelligence_client()
     if tenant_id:
-        # Create a new client with the specified tenant_id
-        client = KalibrIntelligence(tenant_id=tenant_id)
-    return client.get_policy(goal, **kwargs)
+        # Use context manager to ensure client is properly closed
+        with KalibrIntelligence(tenant_id=tenant_id) as client:
+            return client.get_policy(goal, **kwargs)
+    return _get_intelligence_client().get_policy(goal, **kwargs)
 
 
 def report_outcome(trace_id: str, goal: str, success: bool, tenant_id: str | None = None, **kwargs) -> dict[str, Any]:
@@ -565,11 +565,11 @@ def report_outcome(trace_id: str, goal: str, success: bool, tenant_id: str | Non
 
         report_outcome(trace_id="abc123", goal="book_meeting", success=True)
     """
-    client = _get_intelligence_client()
     if tenant_id:
-        # Create a new client with the specified tenant_id
-        client = KalibrIntelligence(tenant_id=tenant_id)
-    return client.report_outcome(trace_id, goal, success, **kwargs)
+        # Use context manager to ensure client is properly closed
+        with KalibrIntelligence(tenant_id=tenant_id) as client:
+            return client.report_outcome(trace_id, goal, success, **kwargs)
+    return _get_intelligence_client().report_outcome(trace_id, goal, success, **kwargs)
 
 
 def get_recommendation(task_type: str, **kwargs) -> dict[str, Any]:
@@ -614,10 +614,11 @@ def register_path(
             tool_id="calendar_tool"
         )
     """
-    client = _get_intelligence_client()
     if tenant_id:
-        client = KalibrIntelligence(tenant_id=tenant_id)
-    return client.register_path(goal, model_id, tool_id, params, risk_level)
+        # Use context manager to ensure client is properly closed
+        with KalibrIntelligence(tenant_id=tenant_id) as client:
+            return client.register_path(goal, model_id, tool_id, params, risk_level)
+    return _get_intelligence_client().register_path(goal, model_id, tool_id, params, risk_level)
 
 
 def decide(
@@ -644,7 +645,8 @@ def decide(
         decision = decide(goal="book_meeting")
         model = decision["model_id"]
     """
-    client = _get_intelligence_client()
     if tenant_id:
-        client = KalibrIntelligence(tenant_id=tenant_id)
-    return client.decide(goal, task_risk_level)
+        # Use context manager to ensure client is properly closed
+        with KalibrIntelligence(tenant_id=tenant_id) as client:
+            return client.decide(goal, task_risk_level)
+    return _get_intelligence_client().decide(goal, task_risk_level)
