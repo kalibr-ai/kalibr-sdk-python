@@ -3,8 +3,11 @@ Google Generative AI SDK Instrumentation
 
 Monkey-patches the Google Generative AI SDK to automatically emit OpenTelemetry spans
 for all content generation API calls.
+
+Thread-safe singleton pattern using double-checked locking.
 """
 
+import threading
 import time
 from functools import wraps
 from typing import Any, Dict, Optional
@@ -261,13 +264,20 @@ class GoogleInstrumentation(BaseInstrumentation):
 
 # Singleton instance
 _google_instrumentation = None
+_google_lock = threading.Lock()
 
 
 def get_instrumentation() -> GoogleInstrumentation:
-    """Get or create the Google instrumentation singleton"""
+    """Get or create the Google instrumentation singleton.
+    
+    Thread-safe singleton pattern using double-checked locking.
+    """
     global _google_instrumentation
     if _google_instrumentation is None:
-        _google_instrumentation = GoogleInstrumentation()
+        with _google_lock:
+            # Double-check inside lock to prevent race condition
+            if _google_instrumentation is None:
+                _google_instrumentation = GoogleInstrumentation()
     return _google_instrumentation
 
 

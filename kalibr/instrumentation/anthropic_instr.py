@@ -3,8 +3,11 @@ Anthropic SDK Instrumentation
 
 Monkey-patches the Anthropic SDK to automatically emit OpenTelemetry spans
 for all message API calls.
+
+Thread-safe singleton pattern using double-checked locking.
 """
 
+import threading
 import time
 from functools import wraps
 from typing import Any, Dict, Optional
@@ -262,13 +265,20 @@ class AnthropicInstrumentation(BaseInstrumentation):
 
 # Singleton instance
 _anthropic_instrumentation = None
+_anthropic_lock = threading.Lock()
 
 
 def get_instrumentation() -> AnthropicInstrumentation:
-    """Get or create the Anthropic instrumentation singleton"""
+    """Get or create the Anthropic instrumentation singleton.
+    
+    Thread-safe singleton pattern using double-checked locking.
+    """
     global _anthropic_instrumentation
     if _anthropic_instrumentation is None:
-        _anthropic_instrumentation = AnthropicInstrumentation()
+        with _anthropic_lock:
+            # Double-check inside lock to prevent race condition
+            if _anthropic_instrumentation is None:
+                _anthropic_instrumentation = AnthropicInstrumentation()
     return _anthropic_instrumentation
 
 
