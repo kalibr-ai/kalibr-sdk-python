@@ -28,6 +28,7 @@ Usage:
 """
 
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -85,12 +86,16 @@ class TraceCapsule:
         # Phase 3C: Context token propagation (keep as UUID for consistency)
         self.context_token = context_token or str(uuid.uuid4())
         self.parent_context_token = parent_context_token
+        # Thread-safety: Lock for protecting concurrent append_hop operations
+        self._lock = threading.Lock()
 
     def append_hop(self, hop: Dict[str, Any]) -> None:
         """Append a new hop to the capsule.
 
         Maintains a rolling window of last N hops to keep payload compact.
         Updates aggregate metrics automatically.
+        
+        Thread-safe: Uses internal lock to protect concurrent modifications.
 
         Args:
             hop: Dictionary containing hop metadata
@@ -111,22 +116,24 @@ class TraceCapsule:
                 "agent_name": "code-writer"
             })
         """
-        # Add hop_index
-        hop["hop_index"] = len(self.last_n_hops)
+        # Thread-safe update of capsule state
+        with self._lock:
+            # Add hop_index
+            hop["hop_index"] = len(self.last_n_hops)
 
-        # Append to history
-        self.last_n_hops.append(hop)
+            # Append to history
+            self.last_n_hops.append(hop)
 
-        # Maintain rolling window (keep last N hops)
-        if len(self.last_n_hops) > self.MAX_HOPS:
-            self.last_n_hops.pop(0)
+            # Maintain rolling window (keep last N hops)
+            if len(self.last_n_hops) > self.MAX_HOPS:
+                self.last_n_hops.pop(0)
 
-        # Update aggregates
-        self.aggregate_cost_usd += hop.get("cost_usd", 0.0)
-        self.aggregate_latency_ms += hop.get("duration_ms", 0.0)
+            # Update aggregates
+            self.aggregate_cost_usd += hop.get("cost_usd", 0.0)
+            self.aggregate_latency_ms += hop.get("duration_ms", 0.0)
 
-        # Update timestamp
-        self.timestamp = datetime.now(timezone.utc).isoformat()
+            # Update timestamp
+            self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def get_last_hop(self) -> Optional[Dict[str, Any]]:
         """Get the most recent hop.

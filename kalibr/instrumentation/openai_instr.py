@@ -3,8 +3,11 @@ OpenAI SDK Instrumentation
 
 Monkey-patches the OpenAI SDK to automatically emit OpenTelemetry spans
 for all chat completion API calls.
+
+Thread-safe singleton pattern using double-checked locking.
 """
 
+import threading
 import time
 from functools import wraps
 from typing import Any, Dict, Optional
@@ -245,13 +248,20 @@ class OpenAIInstrumentation(BaseInstrumentation):
 
 # Singleton instance
 _openai_instrumentation = None
+_openai_lock = threading.Lock()
 
 
 def get_instrumentation() -> OpenAIInstrumentation:
-    """Get or create the OpenAI instrumentation singleton"""
+    """Get or create the OpenAI instrumentation singleton.
+    
+    Thread-safe singleton pattern using double-checked locking.
+    """
     global _openai_instrumentation
     if _openai_instrumentation is None:
-        _openai_instrumentation = OpenAIInstrumentation()
+        with _openai_lock:
+            # Double-check inside lock to prevent race condition
+            if _openai_instrumentation is None:
+                _openai_instrumentation = OpenAIInstrumentation()
     return _openai_instrumentation
 
 
