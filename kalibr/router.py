@@ -6,6 +6,8 @@ import os
 import logging
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from opentelemetry import trace as otel_trace
+
 logger = logging.getLogger(__name__)
 
 # Type for paths - either string or dict
@@ -109,57 +111,82 @@ class Router:
             OpenAI-compatible ChatCompletion response
         """
         from kalibr.intelligence import decide
-        from kalibr.context import get_trace_id
 
-        # Reset state for new request
-        self._outcome_reported = False
+        tracer = otel_trace.get_tracer("kalibr.router")
 
-        # Get routing decision (or use forced model)
-        if force_model:
-            model_id = force_model
-            tool_id = None
-            params = {}
-            self._last_decision = {"model_id": model_id, "forced": True}
-        else:
-            try:
-                decision = decide(goal=self.goal)
-                model_id = decision.get("model_id") or self._paths[0]["model"]
-                tool_id = decision.get("tool_id")
-                params = decision.get("params") or {}
-                self._last_decision = decision
-            except Exception as e:
-                # Fallback to first path if routing fails
-                logger.warning(f"Routing failed, using fallback: {e}")
-                model_id = self._paths[0]["model"]
-                tool_id = self._paths[0].get("tools")
-                params = self._paths[0].get("params") or {}
-                self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
+        with tracer.start_as_current_span(
+            "kalibr.router.completion",
+            attributes={
+                "kalibr.goal": self.goal,
+            }
+        ) as router_span:
+            # Reset state for new request
+            self._outcome_reported = False
 
-        # Dispatch to provider
-        try:
-            response = self._dispatch(model_id, messages, tool_id, **{**params, **kwargs})
-            self._last_trace_id = get_trace_id()
-
-            # Auto-report if success_when provided
-            if self.success_when and not self._outcome_reported:
+            # Get routing decision (or use forced model)
+            if force_model:
+                model_id = force_model
+                tool_id = None
+                params = {}
+                self._last_decision = {"model_id": model_id, "forced": True}
+                router_span.set_attribute("kalibr.model_id", model_id)
+                router_span.set_attribute("kalibr.forced", True)
+            else:
                 try:
-                    output = response.choices[0].message.content or ""
-                    success = self.success_when(output)
-                    self.report(success=success)
+                    decision = decide(goal=self.goal)
+                    model_id = decision.get("model_id") or self._paths[0]["model"]
+                    tool_id = decision.get("tool_id")
+                    params = decision.get("params") or {}
+                    self._last_decision = decision
+
+                    # Add decision attributes to span
+                    router_span.set_attribute("kalibr.path_id", decision.get("path_id", ""))
+                    router_span.set_attribute("kalibr.model_id", model_id)
+                    router_span.set_attribute("kalibr.reason", decision.get("reason", ""))
+                    router_span.set_attribute("kalibr.exploration", decision.get("exploration", False))
+                    router_span.set_attribute("kalibr.confidence", decision.get("confidence", 0.0))
                 except Exception as e:
-                    logger.warning(f"Auto-outcome evaluation failed: {e}")
+                    # Fallback to first path if routing fails
+                    logger.warning(f"Routing failed, using fallback: {e}")
+                    model_id = self._paths[0]["model"]
+                    tool_id = self._paths[0].get("tools")
+                    params = self._paths[0].get("params") or {}
+                    self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
+                    router_span.set_attribute("kalibr.model_id", model_id)
+                    router_span.set_attribute("kalibr.fallback", True)
+                    router_span.set_attribute("kalibr.fallback_reason", str(e))
 
-            return response
+            # Store trace_id from THIS span for outcome reporting
+            span_context = router_span.get_span_context()
+            self._last_trace_id = format(span_context.trace_id, "032x")
 
-        except Exception as e:
-            # Auto-report failure
-            self._last_trace_id = get_trace_id()
-            if not self._outcome_reported:
-                try:
-                    self.report(success=False, reason=f"provider_error: {type(e).__name__}")
-                except:
-                    pass
-            raise
+            # Dispatch to provider (will be child span via auto-instrumentation)
+            try:
+                response = self._dispatch(model_id, messages, tool_id, **{**params, **kwargs})
+
+                # Auto-report if success_when provided
+                if self.success_when and not self._outcome_reported:
+                    try:
+                        output = response.choices[0].message.content or ""
+                        success = self.success_when(output)
+                        self.report(success=success)
+                    except Exception as e:
+                        logger.warning(f"Auto-outcome evaluation failed: {e}")
+
+                return response
+
+            except Exception as e:
+                # Record error on span
+                router_span.set_attribute("error", True)
+                router_span.set_attribute("error.type", type(e).__name__)
+
+                # Auto-report failure
+                if not self._outcome_reported:
+                    try:
+                        self.report(success=False, reason=f"provider_error: {type(e).__name__}")
+                    except:
+                        pass
+                raise
 
     def report(
         self,
