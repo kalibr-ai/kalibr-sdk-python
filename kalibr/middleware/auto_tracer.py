@@ -54,7 +54,7 @@ class AutoTracerMiddleware(BaseHTTPMiddleware):
 
         # Collector config
         self.collector_url = collector_url or os.getenv(
-            "KALIBR_COLLECTOR_URL", "https://api.kalibr.systems/api/ingest"
+            "KALIBR_COLLECTOR_URL", "https://kalibr-backend.fly.dev/api/ingest"
         )
         self.api_key = api_key or os.getenv("KALIBR_API_KEY", "")
         self.tenant_id = tenant_id or os.getenv("KALIBR_TENANT_ID", "default")
