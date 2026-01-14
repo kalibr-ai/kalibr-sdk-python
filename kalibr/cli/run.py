@@ -47,7 +47,7 @@ def run(
         kalibr run weather.py --runtime fly.io
 
         # Custom backend
-        kalibr run weather.py --backend-url https://api.kalibr.systems
+        kalibr run weather.py --backend-url https://kalibr-backend.fly.dev
     """
     # Validate file exists
     agent_path = Path(file_path).resolve()
@@ -56,7 +56,7 @@ def run(
         raise typer.Exit(1)
 
     # Configure backend
-    backend = backend_url or os.getenv("KALIBR_BACKEND_URL", "https://api.kalibr.systems")
+    backend = backend_url or os.getenv("KALIBR_BACKEND_URL", "https://kalibr-backend.fly.dev")
     api_key = os.getenv("KALIBR_API_KEY")
     if not api_key:
         console.print("[yellow]⚠️  KALIBR_API_KEY not set. Set it for trace authentication.[/yellow]")

@@ -70,7 +70,7 @@ class KalibrClient:
 
         self.api_key = api_key or env_config.get("auth_token", "")
         self.endpoint = endpoint or env_config.get(
-            "api_endpoint", "https://api.kalibr.systems/api/v1/traces"
+            "api_endpoint", "https://kalibr-backend.fly.dev/api/v1/traces"
         )
         self.tenant_id = tenant_id or env_config.get("tenant_id", "default")
         self.environment = environment or env_config.get("environment", "prod")

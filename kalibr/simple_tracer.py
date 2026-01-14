@@ -53,7 +53,7 @@ def send_event(payload: dict):
         print("[Kalibr SDK] ❌ requests library not available")
         return
 
-    url = os.getenv("KALIBR_COLLECTOR_URL", "https://api.kalibr.systems/api/ingest")
+    url = os.getenv("KALIBR_COLLECTOR_URL", "https://kalibr-backend.fly.dev/api/ingest")
     api_key = os.getenv("KALIBR_API_KEY")
     if not api_key:
         print("[Kalibr SDK] ⚠️  KALIBR_API_KEY not set, traces will not be sent")
