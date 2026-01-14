@@ -3,6 +3,8 @@ Base instrumentation class for LLM SDKs
 
 Provides common functionality for monkey-patching LLM SDKs and
 emitting OpenTelemetry-compatible spans.
+
+Note: Cost adapters now use centralized pricing from kalibr.pricing module.
 """
 
 import time
@@ -12,6 +14,8 @@ from typing import Any, Dict, Optional
 
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
+
+from kalibr.pricing import get_pricing
 
 
 class BaseInstrumentation(ABC):
@@ -76,9 +80,11 @@ class BaseInstrumentation(ABC):
 
 
 class BaseCostAdapter(ABC):
-    """Base class for cost calculation adapters"""
-
-    PRICING: Dict[str, Dict[str, float]] = {}
+    """Base class for cost calculation adapters.
+    
+    Uses centralized pricing from kalibr.pricing module.
+    All subclasses must implement get_vendor_name() to specify their vendor.
+    """
 
     @abstractmethod
     def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
@@ -87,22 +93,34 @@ class BaseCostAdapter(ABC):
 
         Args:
             model: Model identifier (e.g., "gpt-4")
-            usage: Token usage dictionary with prompt_tokens, completion_tokens
+            usage: Token usage dictionary with prompt_tokens, completion_tokens,
+                   input_tokens, or output_tokens
 
         Returns:
             Cost in USD (rounded to 6 decimal places)
         """
         pass
 
-    def get_pricing(self, model: str) -> Optional[Dict[str, float]]:
+    @abstractmethod
+    def get_vendor_name(self) -> str:
         """
-        Get pricing for a specific model
+        Get the vendor name for this adapter.
+        
+        Returns:
+            Vendor name (e.g., "openai", "anthropic", "google")
+        """
+        pass
+
+    def get_pricing_for_model(self, model: str) -> Dict[str, float]:
+        """
+        Get pricing for a specific model using centralized pricing.
 
         Args:
             model: Model identifier
 
         Returns:
-            Dictionary with "input" and "output" prices per 1K tokens,
-            or None if model not found
+            Dictionary with "input" and "output" prices per 1M tokens
         """
-        return self.PRICING.get(model)
+        vendor = self.get_vendor_name()
+        pricing, _ = get_pricing(vendor, model)
+        return pricing

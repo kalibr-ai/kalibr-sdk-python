@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Critical: Duplicate Cost Adapter Implementations** ([#29](https://github.com/kalibr-ai/kalibr-sdk-python/issues/29))
+  - Fixed inconsistent cost calculations caused by multiple implementations with different pricing units (per-1M, per-1K, per-token)
+  - Created centralized pricing module (`kalibr.pricing`) as single source of truth for all model pricing
+  - Standardized all pricing to per-1M tokens (matching OpenAI/Anthropic pricing pages)
+  - Refactored `kalibr.cost_adapter`, `kalibr.instrumentation.base`, and all vendor-specific instrumentation files to use centralized pricing
+  - Updated `simple_tracer.py` to use centralized cost calculation
+  - Added comprehensive tests for pricing consistency across all adapters
+  - Cost tracking is now reliable and consistent across all tracing methods
+
+### Added
+
+- New `kalibr.pricing` module with centralized pricing data and utilities
+  - `get_pricing(vendor, model)` - Get pricing for any vendor/model
+  - `normalize_model_name(vendor, model)` - Standardize model names with fuzzy matching
+  - `compute_cost(vendor, model, input_tokens, output_tokens)` - Compute cost from centralized pricing
+- Comprehensive test suite for pricing (`tests/test_pricing.py`, `tests/test_cost_adapter.py`)
+- Consistency tests to ensure all adapters produce identical costs for same inputs
+
 ## [1.2.0] - 2024-12-23
 
 ### Added
