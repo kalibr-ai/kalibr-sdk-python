@@ -4,6 +4,7 @@ Kalibr Router - Intelligent model routing with outcome learning.
 
 import os
 import logging
+import uuid
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from opentelemetry import trace as otel_trace
@@ -51,6 +52,7 @@ class Router:
         self.success_when = success_when
         self.exploration_rate = exploration_rate
         self._last_trace_id: Optional[str] = None
+        self._last_model_id: Optional[str] = None
         self._last_decision: Optional[dict] = None
         self._outcome_reported = False
 
@@ -158,7 +160,12 @@ class Router:
 
             # Store trace_id from THIS span for outcome reporting
             span_context = router_span.get_span_context()
-            self._last_trace_id = format(span_context.trace_id, "032x")
+            trace_id = format(span_context.trace_id, "032x")
+            # Check if trace_id is valid (not all zeros from unconfigured tracer)
+            if trace_id == "0" * 32:
+                trace_id = uuid.uuid4().hex
+            self._last_trace_id = trace_id
+            self._last_model_id = model_id
 
             # Dispatch to provider (will be child span via auto-instrumentation)
             try:
@@ -207,12 +214,11 @@ class Router:
             return
 
         from kalibr.intelligence import report_outcome
-        from kalibr.context import get_trace_id
 
-        trace_id = self._last_trace_id or get_trace_id()
+        trace_id = self._last_trace_id
         if not trace_id:
-            logger.warning("No trace_id available for outcome reporting")
-            return
+            # Generate fallback trace_id if none available
+            trace_id = uuid.uuid4().hex
 
         try:
             report_outcome(
@@ -221,6 +227,7 @@ class Router:
                 success=success,
                 score=score,
                 failure_reason=reason,
+                model_id=self._last_model_id,
             )
             self._outcome_reported = True
         except Exception as e:
