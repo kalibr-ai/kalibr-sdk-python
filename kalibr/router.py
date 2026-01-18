@@ -26,6 +26,11 @@ class Router:
             success_when=lambda out: len(out) > 100
         )
         response = router.completion(messages=[...])
+
+    Warning:
+        Router is not thread-safe. For concurrent requests, create separate
+        Router instances per thread/task. For sequential requests in a single
+        thread, Router can be reused across multiple completion() calls.
     """
 
     def __init__(
@@ -110,7 +115,14 @@ class Router:
             **kwargs: Additional args passed to provider
 
         Returns:
-            OpenAI-compatible ChatCompletion response
+            OpenAI-compatible ChatCompletion response with added attribute:
+                - kalibr_trace_id: Trace ID for explicit outcome reporting
+
+        Raises:
+            openai.OpenAIError: If OpenAI API call fails
+            anthropic.AnthropicError: If Anthropic API call fails
+            google.generativeai.GenerativeAIError: If Google API call fails
+            ImportError: If required provider SDK is not installed
         """
         from kalibr.intelligence import decide
 
@@ -166,6 +178,7 @@ class Router:
                 trace_id = uuid.uuid4().hex
             self._last_trace_id = trace_id
             self._last_model_id = model_id
+            router_span.set_attribute("kalibr.trace_id", trace_id)
 
             # Dispatch to provider (will be child span via auto-instrumentation)
             try:
@@ -180,6 +193,8 @@ class Router:
                     except Exception as e:
                         logger.warning(f"Auto-outcome evaluation failed: {e}")
 
+                # Add trace_id to response for explicit linkage
+                response.kalibr_trace_id = trace_id
                 return response
 
             except Exception as e:
@@ -200,6 +215,7 @@ class Router:
         success: bool,
         reason: Optional[str] = None,
         score: Optional[float] = None,
+        trace_id: Optional[str] = None,
     ):
         """
         Report outcome for the last completion.
@@ -208,17 +224,17 @@ class Router:
             success: Whether the task succeeded
             reason: Optional failure reason
             score: Optional quality score (0.0-1.0)
+            trace_id: Optional explicit trace ID (uses last completion's trace_id if not provided)
         """
         if self._outcome_reported:
-            logger.warning("Outcome already reported for this request")
+            logger.warning("Outcome already reported for this completion. Each completion() requires a separate report() call.")
             return
 
         from kalibr.intelligence import report_outcome
 
-        trace_id = self._last_trace_id
+        trace_id = trace_id or self._last_trace_id
         if not trace_id:
-            # Generate fallback trace_id if none available
-            trace_id = uuid.uuid4().hex
+            raise ValueError("Must call completion() before report(). No trace_id available.")
 
         try:
             report_outcome(
