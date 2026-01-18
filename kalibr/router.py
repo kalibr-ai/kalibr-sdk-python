@@ -27,6 +27,25 @@ class Router:
         )
         response = router.completion(messages=[...])
 
+    Examples:
+        # Simple auto-reporting
+        router = Router(
+            goal="extract_email",
+            paths=["gpt-4o", "claude-sonnet-4"],
+            success_when=lambda out: "@" in out
+        )
+        response = router.completion(messages=[...])
+        # report() called automatically
+
+        # Manual reporting for complex validation
+        router = Router(
+            goal="book_meeting",
+            paths=["gpt-4o", "claude-sonnet-4"]
+        )
+        response = router.completion(messages=[...])
+        # ... complex validation logic ...
+        router.report(success=meeting_booked)
+
     Warning:
         Router is not thread-safe. For concurrent requests, create separate
         Router instances per thread/task. For sequential requests in a single
@@ -49,7 +68,16 @@ class Router:
             paths: List of models or path configs. Examples:
                    ["gpt-4o", "claude-3-sonnet"]
                    [{"model": "gpt-4o", "tools": ["search"]}]
-            success_when: Optional function to auto-evaluate success from output
+                   [{"model": "gpt-4o", "params": {"temperature": 0.7}}]
+            success_when: Optional function to auto-evaluate success from LLM output.
+                         Takes the output string and returns True/False.
+                         When provided, report() is called automatically after completion().
+                         Use for simple validations (output length, contains key string).
+                         For complex validation (API calls, multi-step checks), omit this
+                         and call report() manually.
+                         Examples:
+                             success_when=lambda out: len(out) > 0  # Not empty
+                             success_when=lambda out: "@" in out     # Contains email
             exploration_rate: Override exploration rate (0.0-1.0)
             auto_register: If True, register paths on init
         """
