@@ -56,6 +56,63 @@ paths = [
 ]
 ```
 
+## Advanced Path Configuration
+
+### Routing Between Parameters
+
+Kalibr can route between different parameter configurations of the same model:
+```python
+from kalibr import Router
+
+router = Router(
+    goal="creative_writing",
+    paths=[
+        {"model": "gpt-4o", "params": {"temperature": 0.3}},
+        {"model": "gpt-4o", "params": {"temperature": 0.9}},
+        {"model": "claude-sonnet-4-20250514", "params": {"temperature": 0.7}}
+    ]
+)
+
+response = router.completion(messages=[...])
+router.report(success=True)
+```
+
+Each unique `(model, params)` combination is tracked separately. Kalibr learns which configuration works best for your specific goal.
+
+### Routing Between Tools
+```python
+router = Router(
+    goal="research_task",
+    paths=[
+        {"model": "gpt-4o", "tools": ["web_search"]},
+        {"model": "gpt-4o", "tools": ["code_interpreter"]},
+        {"model": "claude-sonnet-4-20250514"}
+    ]
+)
+```
+
+### When to Use get_policy() Instead of Router
+
+For most use cases, use `Router`. It handles provider dispatching and response conversion automatically.
+
+Use `get_policy()` for advanced scenarios:
+- Integrating with frameworks like LangChain that wrap LLM calls
+- Custom retry logic or provider-specific features
+- Building tools that need fine-grained control
+```python
+from kalibr import get_policy, report_outcome
+
+policy = get_policy(goal="summarize")
+model = policy["recommended_model"]
+
+# You call the provider yourself
+if model.startswith("gpt"):
+    client = OpenAI()
+    response = client.chat.completions.create(model=model, messages=[...])
+
+report_outcome(trace_id=trace_id, goal="summarize", success=True)
+```
+
 ## Outcome Reporting
 
 ### Automatic (with success_when)
