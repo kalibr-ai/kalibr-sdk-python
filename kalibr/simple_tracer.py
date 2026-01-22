@@ -19,6 +19,8 @@ Capsule Usage (automatic when middleware is active):
     def process_request(request: Request, prompt: str):
         # Capsule automatically updated with this hop
         return llm_call(prompt)
+
+Note: Uses centralized pricing from kalibr.pricing module.
 """
 
 import json
@@ -30,6 +32,8 @@ import uuid
 from datetime import datetime, timezone
 from functools import wraps
 from typing import Callable, Optional
+
+from kalibr.pricing import compute_cost
 
 try:
     import requests
@@ -155,21 +159,18 @@ def trace(
             actual_input_tokens = input_tokens or kwargs.get("input_tokens", 1000)
             actual_output_tokens = output_tokens or kwargs.get("output_tokens", 500)
 
-            # Cost calculation (simplified pricing)
-            # OpenAI GPT-4o: ~$2.50/1M input, ~$10/1M output
-            # Anthropic Claude-3-Sonnet: ~$3/1M input, ~$15/1M output
-            pricing_map = {
-                "openai": {"gpt-4o": 0.00000250, "gpt-4": 0.00003000},
-                "anthropic": {"claude-3-sonnet": 0.00000300, "claude-3-opus": 0.00001500},
-                "google": {"gemini-pro": 0.00000125},
-            }
+            # Cost calculation using centralized pricing
+            # This ensures consistency with all other cost adapters
+            total_cost_usd = compute_cost(
+                vendor=provider,
+                model_name=model,
+                input_tokens=actual_input_tokens,
+                output_tokens=actual_output_tokens,
+            )
 
-            # Get unit price
-            provider_pricing = pricing_map.get(provider, {})
-            unit_price_usd = provider_pricing.get(model, 0.00002000)  # Default $0.02/1M
-
-            # Calculate total cost
-            total_cost_usd = (actual_input_tokens + actual_output_tokens) * unit_price_usd
+            # Calculate unit price for backward compatibility (total cost / total tokens)
+            total_tokens = actual_input_tokens + actual_output_tokens
+            unit_price_usd = total_cost_usd / total_tokens if total_tokens > 0 else 0.0
 
             # Build payload
             payload = {
