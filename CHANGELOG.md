@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Critical: Memory Leak - HTTP Clients Created But Never Closed** ([#38](https://github.com/kalibr-ai/kalibr-sdk-python/issues/38))
+  - Fixed resource leaks in convenience functions when using custom `tenant_id`
+  - `get_policy()`, `report_outcome()`, `register_path()`, and `decide()` now properly close HTTP clients
+  - All functions now use context manager pattern for temporary clients
+  - Prevents connection exhaustion in long-running multi-tenant applications
+  - Added comprehensive tests to verify proper resource cleanup (10 tests)
 - **Critical: Thread-Safety Issues in Singleton Patterns and Shared State** ([#30](https://github.com/kalibr-ai/kalibr-sdk-python/issues/30))
   - Fixed race conditions in singleton patterns using double-checked locking
   - Added thread-safe locks to Intelligence client singleton (`kalibr/intelligence.py`)
