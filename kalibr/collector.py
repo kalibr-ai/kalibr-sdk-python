@@ -5,10 +5,13 @@ Configures OpenTelemetry tracer provider with multiple exporters:
 1. OTLP exporter for sending to OpenTelemetry collectors
 2. Kalibr HTTP exporter for sending to Kalibr backend
 3. File exporter for local JSONL fallback
+
+Thread-safe singleton pattern for collector setup.
 """
 
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -167,7 +170,6 @@ class KalibrHTTPSpanExporter(SpanExporter):
 
     def _convert_span(self, span) -> dict:
         """Convert OTel span to Kalibr event format"""
-        attrs = dict(span.attributes) if span.attributes else {}
 
         # Calculate duration from span times (nanoseconds to milliseconds)
         duration_ms = 0
@@ -236,6 +238,7 @@ class KalibrHTTPSpanExporter(SpanExporter):
 
 _tracer_provider: Optional[TracerProvider] = None
 _is_configured = False
+_collector_lock = threading.Lock()
 
 
 def setup_collector(
@@ -246,6 +249,8 @@ def setup_collector(
 ) -> TracerProvider:
     """
     Setup OpenTelemetry collector with multiple exporters
+
+    Thread-safe: Uses double-checked locking to ensure single initialization.
 
     Args:
         service_name: Service name for the tracer provider
@@ -259,60 +264,67 @@ def setup_collector(
     """
     global _tracer_provider, _is_configured
 
+    # First check without lock (fast path)
     if _is_configured and _tracer_provider:
         return _tracer_provider
 
-    # Create resource with service name
-    resource = Resource(attributes={SERVICE_NAME: service_name})
+    # Acquire lock for initialization
+    with _collector_lock:
+        # Double-check inside lock
+        if _is_configured and _tracer_provider:
+            return _tracer_provider
 
-    # Create tracer provider
-    provider = TracerProvider(resource=resource)
+        # Create resource with service name
+        resource = Resource(attributes={SERVICE_NAME: service_name})
 
-    # Add OTLP exporter if endpoint is configured
-    otlp_endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if otlp_endpoint:
-        try:
-            otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
-            provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-            print(f"✅ OTLP exporter configured: {otlp_endpoint}")
-        except Exception as e:
-            print(f"⚠️  Failed to configure OTLP exporter: {e}")
+        # Create tracer provider
+        provider = TracerProvider(resource=resource)
 
-    # Add Kalibr HTTP exporter if API key is configured
-    kalibr_api_key = os.getenv("KALIBR_API_KEY")
-    if kalibr_api_key:
-        try:
-            kalibr_exporter = KalibrHTTPSpanExporter()
-            provider.add_span_processor(BatchSpanProcessor(kalibr_exporter))
-            print(f"✅ Kalibr backend exporter configured: {kalibr_exporter.url}")
-        except Exception as e:
-            print(f"⚠️  Failed to configure Kalibr backend exporter: {e}")
+        # Add OTLP exporter if endpoint is configured
+        otlp_endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+        if otlp_endpoint:
+            try:
+                otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+                provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+                print(f"✅ OTLP exporter configured: {otlp_endpoint}")
+            except Exception as e:
+                print(f"⚠️  Failed to configure OTLP exporter: {e}")
 
-    # Add file exporter for local fallback
-    if file_export:
-        try:
-            file_exporter = FileSpanExporter("/tmp/kalibr_otel_spans.jsonl")
-            provider.add_span_processor(BatchSpanProcessor(file_exporter))
-            print("✅ File exporter configured: /tmp/kalibr_otel_spans.jsonl")
-        except Exception as e:
-            print(f"⚠️  Failed to configure file exporter: {e}")
+        # Add Kalibr HTTP exporter if API key is configured
+        kalibr_api_key = os.getenv("KALIBR_API_KEY")
+        if kalibr_api_key:
+            try:
+                kalibr_exporter = KalibrHTTPSpanExporter()
+                provider.add_span_processor(BatchSpanProcessor(kalibr_exporter))
+                print(f"✅ Kalibr backend exporter configured: {kalibr_exporter.url}")
+            except Exception as e:
+                print(f"⚠️  Failed to configure Kalibr backend exporter: {e}")
 
-    # Add console exporter for debugging
-    if console_export:
-        try:
-            console_exporter = ConsoleSpanExporter()
-            provider.add_span_processor(BatchSpanProcessor(console_exporter))
-            print("✅ Console exporter configured")
-        except Exception as e:
-            print(f"⚠️  Failed to configure console exporter: {e}")
+        # Add file exporter for local fallback
+        if file_export:
+            try:
+                file_exporter = FileSpanExporter("/tmp/kalibr_otel_spans.jsonl")
+                provider.add_span_processor(BatchSpanProcessor(file_exporter))
+                print("✅ File exporter configured: /tmp/kalibr_otel_spans.jsonl")
+            except Exception as e:
+                print(f"⚠️  Failed to configure file exporter: {e}")
 
-    # Set as global tracer provider
-    trace.set_tracer_provider(provider)
+        # Add console exporter for debugging
+        if console_export:
+            try:
+                console_exporter = ConsoleSpanExporter()
+                provider.add_span_processor(BatchSpanProcessor(console_exporter))
+                print("✅ Console exporter configured")
+            except Exception as e:
+                print(f"⚠️  Failed to configure console exporter: {e}")
 
-    _tracer_provider = provider
-    _is_configured = True
+        # Set as global tracer provider
+        trace.set_tracer_provider(provider)
 
-    return provider
+        _tracer_provider = provider
+        _is_configured = True
+
+        return provider
 
 
 def get_tracer_provider() -> Optional[TracerProvider]:
@@ -326,11 +338,15 @@ def is_configured() -> bool:
 
 
 def shutdown_collector():
-    """Shutdown the tracer provider and flush all spans"""
+    """Shutdown the tracer provider and flush all spans.
+
+    Thread-safe: Uses lock to protect shutdown operation.
+    """
     global _tracer_provider, _is_configured
 
-    if _tracer_provider:
-        _tracer_provider.shutdown()
-        _tracer_provider = None
-        _is_configured = False
-        print("✅ Tracer provider shutdown")
+    with _collector_lock:
+        if _tracer_provider:
+            _tracer_provider.shutdown()
+            _tracer_provider = None
+            _is_configured = False
+            print("✅ Tracer provider shutdown")

@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Critical: Thread-Safety Issues in Singleton Patterns and Shared State** ([#30](https://github.com/kalibr-ai/kalibr-sdk-python/issues/30))
+  - Fixed race conditions in singleton patterns using double-checked locking
+  - Added thread-safe locks to Intelligence client singleton (`kalibr/intelligence.py`)
+  - Added thread-safe locks to all instrumentation singletons (OpenAI, Anthropic, Google)
+  - Added thread-safe locks to collector setup/shutdown (`kalibr/collector.py`)
+  - Added instance-level lock to `TraceCapsule.append_hop()` for concurrent mutations
+  - Added module-level lock to instrumentation registry (`kalibr/instrumentation/registry.py`)
+  - All singleton patterns now use double-checked locking to prevent multiple instances
+  - All shared state operations are now protected by appropriate locks
+  - SDK is now safe to use in multi-threaded applications (FastAPI, async frameworks, concurrent workers)
+
+### Added
+
+- Comprehensive thread-safety test suite (`tests/test_thread_safety.py`)
+  - Tests for concurrent singleton creation (all patterns)
+  - Tests for concurrent TraceCapsule operations
+  - Tests for concurrent instrumentation registration
+  - Stress tests with 100+ threads and 1000+ operations
+  - Reproduction test for issue #30 scenario
 - **Critical: Duplicate Cost Adapter Implementations** ([#29](https://github.com/kalibr-ai/kalibr-sdk-python/issues/29))
   - Fixed inconsistent cost calculations caused by multiple implementations with different pricing units (per-1M, per-1K, per-token)
   - Created centralized pricing module (`kalibr.pricing`) as single source of truth for all model pricing
