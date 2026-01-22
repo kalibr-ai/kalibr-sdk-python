@@ -23,7 +23,7 @@ def capsule(
         None,
         "--api-url",
         "-u",
-        help="Kalibr API base URL (default: from env KALIBR_API_URL or https://api.kalibr.systems)",
+        help="Kalibr API base URL (default: from env KALIBR_API_URL or https://kalibr-backend.fly.dev)",
         envvar="KALIBR_API_URL",
     ),
     output: Optional[Path] = typer.Option(
@@ -63,10 +63,10 @@ def capsule(
         kalibr capsule abc-123-def --export --output capsule.json
 
         # Specify custom API URL
-        kalibr capsule abc-123-def -u https://api.kalibr.systems
+        kalibr capsule abc-123-def -u https://kalibr-backend.fly.dev
     """
     # Determine API base URL
-    base_url = api_url or "https://api.kalibr.systems"
+    base_url = api_url or "https://kalibr-backend.fly.dev"
     base_url = base_url.rstrip("/")
 
     # Build endpoint URL

@@ -33,6 +33,7 @@ Example - Path registration and intelligent routing:
 from __future__ import annotations
 
 import os
+import threading
 from typing import Any, Optional
 
 import httpx
@@ -153,6 +154,7 @@ class KalibrIntelligence:
         metadata: dict | None = None,
         tool_id: str | None = None,
         execution_params: dict | None = None,
+        model_id: str | None = None,
     ) -> dict[str, Any]:
         """Report execution outcome for a goal.
 
@@ -202,6 +204,7 @@ class KalibrIntelligence:
                 "metadata": metadata,
                 "tool_id": tool_id,
                 "execution_params": execution_params,
+                "model_id": model_id,
             },
         )
         return response.json()
@@ -507,13 +510,20 @@ class KalibrIntelligence:
 
 # Module-level singleton for convenience functions
 _intelligence_client: KalibrIntelligence | None = None
+_client_lock = threading.Lock()
 
 
 def _get_intelligence_client() -> KalibrIntelligence:
-    """Get or create the singleton intelligence client."""
+    """Get or create the singleton intelligence client.
+    
+    Thread-safe singleton pattern using double-checked locking.
+    """
     global _intelligence_client
     if _intelligence_client is None:
-        _intelligence_client = KalibrIntelligence()
+        with _client_lock:
+            # Double-check inside lock to prevent race condition
+            if _intelligence_client is None:
+                _intelligence_client = KalibrIntelligence()
     return _intelligence_client
 
 

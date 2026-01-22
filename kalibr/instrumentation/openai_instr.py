@@ -3,8 +3,11 @@ OpenAI SDK Instrumentation
 
 Monkey-patches the OpenAI SDK to automatically emit OpenTelemetry spans
 for all chat completion API calls.
+
+Thread-safe singleton pattern using double-checked locking.
 """
 
+import threading
 import time
 from functools import wraps
 from typing import Any, Dict, Optional
@@ -15,38 +18,34 @@ from .base import BaseCostAdapter, BaseInstrumentation
 
 
 class OpenAICostAdapter(BaseCostAdapter):
-    """Cost calculation adapter for OpenAI models"""
+    """Cost calculation adapter for OpenAI models.
+    
+    Uses centralized pricing from kalibr.pricing module.
+    """
 
-    # Pricing per 1K tokens (USD) - Updated November 2025
-    PRICING = {
-        # GPT-5 models
-        "gpt-5": {"input": 0.005, "output": 0.015},
-        "gpt-5-turbo": {"input": 0.0025, "output": 0.0075},
-        # GPT-4 models
-        "gpt-4": {"input": 0.03, "output": 0.06},
-        "gpt-4-turbo": {"input": 0.01, "output": 0.03},
-        "gpt-4o": {"input": 0.0025, "output": 0.01},
-        "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
-        # GPT-3.5 models
-        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-        "gpt-3.5-turbo-16k": {"input": 0.001, "output": 0.002},
-    }
+    def get_vendor_name(self) -> str:
+        """Return vendor name for OpenAI."""
+        return "openai"
 
     def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
-        """Calculate cost in USD for an OpenAI API call"""
-        # Normalize model name (remove version suffixes)
-        base_model = model.split("-2")[0]  # Remove date suffixes like -20240101
-
-        pricing = self.get_pricing(base_model)
-        if not pricing:
-            # Default to GPT-4 pricing if unknown
-            pricing = {"input": 0.03, "output": 0.06}
+        """Calculate cost in USD for an OpenAI API call.
+        
+        Args:
+            model: Model identifier (e.g., "gpt-4o", "gpt-4o-2024-05-13")
+            usage: Token usage dict with prompt_tokens and completion_tokens
+            
+        Returns:
+            Cost in USD (rounded to 6 decimal places)
+        """
+        # Get pricing from centralized module (handles normalization)
+        pricing = self.get_pricing_for_model(model)
 
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
 
-        input_cost = (prompt_tokens / 1000) * pricing["input"]
-        output_cost = (completion_tokens / 1000) * pricing["output"]
+        # Calculate cost (pricing is per 1M tokens)
+        input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
+        output_cost = (completion_tokens / 1_000_000) * pricing["output"]
 
         return round(input_cost + output_cost, 6)
 
@@ -245,13 +244,20 @@ class OpenAIInstrumentation(BaseInstrumentation):
 
 # Singleton instance
 _openai_instrumentation = None
+_openai_lock = threading.Lock()
 
 
 def get_instrumentation() -> OpenAIInstrumentation:
-    """Get or create the OpenAI instrumentation singleton"""
+    """Get or create the OpenAI instrumentation singleton.
+    
+    Thread-safe singleton pattern using double-checked locking.
+    """
     global _openai_instrumentation
     if _openai_instrumentation is None:
-        _openai_instrumentation = OpenAIInstrumentation()
+        with _openai_lock:
+            # Double-check inside lock to prevent race condition
+            if _openai_instrumentation is None:
+                _openai_instrumentation = OpenAIInstrumentation()
     return _openai_instrumentation
 
 

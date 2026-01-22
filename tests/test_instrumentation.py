@@ -84,8 +84,8 @@ class TestOpenAIInstrumentation:
             {"prompt_tokens": 1000, "completion_tokens": 500}
         )
         
-        # GPT-4o-mini: $0.00015 input, $0.0006 output per 1K tokens
-        expected = (1000 / 1000 * 0.00015) + (500 / 1000 * 0.0006)
+        # GPT-4o-mini: $0.15 input, $0.60 output per 1M tokens
+        expected = (1000 / 1_000_000 * 0.15) + (500 / 1_000_000 * 0.60)
         assert abs(cost - expected) < 0.000001
     
     def test_openai_span_attributes(self, tracer_provider):
@@ -155,8 +155,8 @@ class TestAnthropicInstrumentation:
             {"input_tokens": 1000, "output_tokens": 500}
         )
         
-        # Claude 3 Haiku: $0.00025 input, $0.00125 output per 1K tokens
-        expected = (1000 / 1000 * 0.00025) + (500 / 1000 * 0.00125)
+        # Claude 3 Haiku: $0.25 input, $1.25 output per 1M tokens
+        expected = (1000 / 1_000_000 * 0.25) + (500 / 1_000_000 * 1.25)
         assert abs(cost - expected) < 0.000001
 
 
@@ -175,8 +175,8 @@ class TestGoogleInstrumentation:
             {"prompt_tokens": 1000, "completion_tokens": 500}
         )
         
-        # Gemini 1.5 Flash: $0.000075 input, $0.0003 output per 1K tokens
-        expected = (1000 / 1000 * 0.000075) + (500 / 1000 * 0.0003)
+        # Gemini 1.5 Flash: $0.075 input, $0.30 output per 1M tokens
+        expected = (1000 / 1_000_000 * 0.075) + (500 / 1_000_000 * 0.30)
         assert abs(cost - expected) < 0.000001
 
 
@@ -229,6 +229,94 @@ class TestCollector:
         # Should not be configured after shutdown
         shutdown_collector()
         # Note: is_configured may still return True due to global state
+
+
+class TestCostConsistency:
+    """Test consistency between instrumentation adapters and centralized pricing"""
+    
+    def test_openai_adapter_consistency(self):
+        """Test that OpenAI instrumentation adapter matches pricing module"""
+        from kalibr.instrumentation.openai_instr import OpenAICostAdapter
+        from kalibr.pricing import compute_cost as pricing_compute_cost
+        
+        adapter = OpenAICostAdapter()
+        
+        # Test several models
+        test_cases = [
+            ("gpt-4o", 1000, 500),
+            ("gpt-4", 2000, 1000),
+            ("gpt-4o-mini", 5000, 2500),
+        ]
+        
+        for model, input_tokens, output_tokens in test_cases:
+            adapter_cost = adapter.calculate_cost(
+                model, 
+                {"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            )
+            pricing_cost = pricing_compute_cost("openai", model, input_tokens, output_tokens)
+            assert adapter_cost == pricing_cost, f"Mismatch for {model}"
+    
+    def test_anthropic_adapter_consistency(self):
+        """Test that Anthropic instrumentation adapter matches pricing module"""
+        from kalibr.instrumentation.anthropic_instr import AnthropicCostAdapter
+        from kalibr.pricing import compute_cost as pricing_compute_cost
+        
+        adapter = AnthropicCostAdapter()
+        
+        # Test several models
+        test_cases = [
+            ("claude-3-opus", 1000, 500),
+            ("claude-3-sonnet", 2000, 1000),
+            ("claude-3-haiku", 5000, 2500),
+        ]
+        
+        for model, input_tokens, output_tokens in test_cases:
+            adapter_cost = adapter.calculate_cost(
+                model,
+                {"input_tokens": input_tokens, "output_tokens": output_tokens}
+            )
+            pricing_cost = pricing_compute_cost("anthropic", model, input_tokens, output_tokens)
+            assert adapter_cost == pricing_cost, f"Mismatch for {model}"
+    
+    def test_google_adapter_consistency(self):
+        """Test that Google instrumentation adapter matches pricing module"""
+        from kalibr.instrumentation.google_instr import GoogleCostAdapter
+        from kalibr.pricing import compute_cost as pricing_compute_cost
+        
+        adapter = GoogleCostAdapter()
+        
+        # Test several models
+        test_cases = [
+            ("gemini-1.5-pro", 1000, 500),
+            ("gemini-1.5-flash", 2000, 1000),
+            ("gemini-pro", 5000, 2500),
+        ]
+        
+        for model, input_tokens, output_tokens in test_cases:
+            adapter_cost = adapter.calculate_cost(
+                model,
+                {"prompt_tokens": input_tokens, "completion_tokens": output_tokens}
+            )
+            pricing_cost = pricing_compute_cost("google", model, input_tokens, output_tokens)
+            assert adapter_cost == pricing_cost, f"Mismatch for {model}"
+    
+    def test_all_adapters_same_cost_for_same_model(self):
+        """Test that using different adapters for same vendor produces same cost"""
+        from kalibr.cost_adapter import OpenAICostAdapter as CoreOpenAIAdapter
+        from kalibr.instrumentation.openai_instr import OpenAICostAdapter as InstrOpenAIAdapter
+        
+        core_adapter = CoreOpenAIAdapter()
+        instr_adapter = InstrOpenAIAdapter()
+        
+        # Core adapter uses compute_cost(model, tokens_in, tokens_out)
+        # Instrumentation adapter uses calculate_cost(model, usage_dict)
+        core_cost = core_adapter.compute_cost("gpt-4o", 1000, 500)
+        instr_cost = instr_adapter.calculate_cost(
+            "gpt-4o",
+            {"prompt_tokens": 1000, "completion_tokens": 500}
+        )
+        
+        assert core_cost == instr_cost
 
 
 if __name__ == "__main__":

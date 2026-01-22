@@ -4,7 +4,10 @@ Kalibr Router - Intelligent model routing with outcome learning.
 
 import os
 import logging
+import uuid
 from typing import Any, Callable, Dict, List, Optional, Union
+
+from opentelemetry import trace as otel_trace
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,30 @@ class Router:
             success_when=lambda out: len(out) > 100
         )
         response = router.completion(messages=[...])
+
+    Examples:
+        # Simple auto-reporting
+        router = Router(
+            goal="extract_email",
+            paths=["gpt-4o", "claude-sonnet-4"],
+            success_when=lambda out: "@" in out
+        )
+        response = router.completion(messages=[...])
+        # report() called automatically
+
+        # Manual reporting for complex validation
+        router = Router(
+            goal="book_meeting",
+            paths=["gpt-4o", "claude-sonnet-4"]
+        )
+        response = router.completion(messages=[...])
+        # ... complex validation logic ...
+        router.report(success=meeting_booked)
+
+    Warning:
+        Router is not thread-safe. For concurrent requests, create separate
+        Router instances per thread/task. For sequential requests in a single
+        thread, Router can be reused across multiple completion() calls.
     """
 
     def __init__(
@@ -41,7 +68,16 @@ class Router:
             paths: List of models or path configs. Examples:
                    ["gpt-4o", "claude-3-sonnet"]
                    [{"model": "gpt-4o", "tools": ["search"]}]
-            success_when: Optional function to auto-evaluate success from output
+                   [{"model": "gpt-4o", "params": {"temperature": 0.7}}]
+            success_when: Optional function to auto-evaluate success from LLM output.
+                         Takes the output string and returns True/False.
+                         When provided, report() is called automatically after completion().
+                         Use for simple validations (output length, contains key string).
+                         For complex validation (API calls, multi-step checks), omit this
+                         and call report() manually.
+                         Examples:
+                             success_when=lambda out: len(out) > 0  # Not empty
+                             success_when=lambda out: "@" in out     # Contains email
             exploration_rate: Override exploration rate (0.0-1.0)
             auto_register: If True, register paths on init
         """
@@ -49,6 +85,7 @@ class Router:
         self.success_when = success_when
         self.exploration_rate = exploration_rate
         self._last_trace_id: Optional[str] = None
+        self._last_model_id: Optional[str] = None
         self._last_decision: Optional[dict] = None
         self._outcome_reported = False
 
@@ -106,66 +143,107 @@ class Router:
             **kwargs: Additional args passed to provider
 
         Returns:
-            OpenAI-compatible ChatCompletion response
+            OpenAI-compatible ChatCompletion response with added attribute:
+                - kalibr_trace_id: Trace ID for explicit outcome reporting
+
+        Raises:
+            openai.OpenAIError: If OpenAI API call fails
+            anthropic.AnthropicError: If Anthropic API call fails
+            google.generativeai.GenerativeAIError: If Google API call fails
+            ImportError: If required provider SDK is not installed
         """
         from kalibr.intelligence import decide
-        from kalibr.context import get_trace_id
 
-        # Reset state for new request
-        self._outcome_reported = False
+        tracer = otel_trace.get_tracer("kalibr.router")
 
-        # Get routing decision (or use forced model)
-        if force_model:
-            model_id = force_model
-            tool_id = None
-            params = {}
-            self._last_decision = {"model_id": model_id, "forced": True}
-        else:
-            try:
-                decision = decide(goal=self.goal)
-                model_id = decision.get("model_id") or self._paths[0]["model"]
-                tool_id = decision.get("tool_id")
-                params = decision.get("params") or {}
-                self._last_decision = decision
-            except Exception as e:
-                # Fallback to first path if routing fails
-                logger.warning(f"Routing failed, using fallback: {e}")
-                model_id = self._paths[0]["model"]
-                tool_id = self._paths[0].get("tools")
-                params = self._paths[0].get("params") or {}
-                self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
+        with tracer.start_as_current_span(
+            "kalibr.router.completion",
+            attributes={
+                "kalibr.goal": self.goal,
+            }
+        ) as router_span:
+            # Reset state for new request
+            self._outcome_reported = False
 
-        # Dispatch to provider
-        try:
-            response = self._dispatch(model_id, messages, tool_id, **{**params, **kwargs})
-            self._last_trace_id = get_trace_id()
-
-            # Auto-report if success_when provided
-            if self.success_when and not self._outcome_reported:
+            # Get routing decision (or use forced model)
+            if force_model:
+                model_id = force_model
+                tool_id = None
+                params = {}
+                self._last_decision = {"model_id": model_id, "forced": True}
+                router_span.set_attribute("kalibr.model_id", model_id)
+                router_span.set_attribute("kalibr.forced", True)
+            else:
                 try:
-                    output = response.choices[0].message.content or ""
-                    success = self.success_when(output)
-                    self.report(success=success)
+                    decision = decide(goal=self.goal)
+                    model_id = decision.get("model_id") or self._paths[0]["model"]
+                    tool_id = decision.get("tool_id")
+                    params = decision.get("params") or {}
+                    self._last_decision = decision
+
+                    # Add decision attributes to span
+                    router_span.set_attribute("kalibr.path_id", decision.get("path_id", ""))
+                    router_span.set_attribute("kalibr.model_id", model_id)
+                    router_span.set_attribute("kalibr.reason", decision.get("reason", ""))
+                    router_span.set_attribute("kalibr.exploration", decision.get("exploration", False))
+                    router_span.set_attribute("kalibr.confidence", decision.get("confidence", 0.0))
                 except Exception as e:
-                    logger.warning(f"Auto-outcome evaluation failed: {e}")
+                    # Fallback to first path if routing fails
+                    logger.warning(f"Routing failed, using fallback: {e}")
+                    model_id = self._paths[0]["model"]
+                    tool_id = self._paths[0].get("tools")
+                    params = self._paths[0].get("params") or {}
+                    self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
+                    router_span.set_attribute("kalibr.model_id", model_id)
+                    router_span.set_attribute("kalibr.fallback", True)
+                    router_span.set_attribute("kalibr.fallback_reason", str(e))
 
-            return response
+            # Store trace_id from THIS span for outcome reporting
+            span_context = router_span.get_span_context()
+            trace_id = format(span_context.trace_id, "032x")
+            # Check if trace_id is valid (not all zeros from unconfigured tracer)
+            if trace_id == "0" * 32:
+                trace_id = uuid.uuid4().hex
+            self._last_trace_id = trace_id
+            self._last_model_id = model_id
+            router_span.set_attribute("kalibr.trace_id", trace_id)
 
-        except Exception as e:
-            # Auto-report failure
-            self._last_trace_id = get_trace_id()
-            if not self._outcome_reported:
-                try:
-                    self.report(success=False, reason=f"provider_error: {type(e).__name__}")
-                except:
-                    pass
-            raise
+            # Dispatch to provider (will be child span via auto-instrumentation)
+            try:
+                response = self._dispatch(model_id, messages, tool_id, **{**params, **kwargs})
+
+                # Auto-report if success_when provided
+                if self.success_when and not self._outcome_reported:
+                    try:
+                        output = response.choices[0].message.content or ""
+                        success = self.success_when(output)
+                        self.report(success=success)
+                    except Exception as e:
+                        logger.warning(f"Auto-outcome evaluation failed: {e}")
+
+                # Add trace_id to response for explicit linkage
+                response.kalibr_trace_id = trace_id
+                return response
+
+            except Exception as e:
+                # Record error on span
+                router_span.set_attribute("error", True)
+                router_span.set_attribute("error.type", type(e).__name__)
+
+                # Auto-report failure
+                if not self._outcome_reported:
+                    try:
+                        self.report(success=False, reason=f"provider_error: {type(e).__name__}")
+                    except:
+                        pass
+                raise
 
     def report(
         self,
         success: bool,
         reason: Optional[str] = None,
         score: Optional[float] = None,
+        trace_id: Optional[str] = None,
     ):
         """
         Report outcome for the last completion.
@@ -174,18 +252,17 @@ class Router:
             success: Whether the task succeeded
             reason: Optional failure reason
             score: Optional quality score (0.0-1.0)
+            trace_id: Optional explicit trace ID (uses last completion's trace_id if not provided)
         """
         if self._outcome_reported:
-            logger.warning("Outcome already reported for this request")
+            logger.warning("Outcome already reported for this completion. Each completion() requires a separate report() call.")
             return
 
         from kalibr.intelligence import report_outcome
-        from kalibr.context import get_trace_id
 
-        trace_id = self._last_trace_id or get_trace_id()
+        trace_id = trace_id or self._last_trace_id
         if not trace_id:
-            logger.warning("No trace_id available for outcome reporting")
-            return
+            raise ValueError("Must call completion() before report(). No trace_id available.")
 
         try:
             report_outcome(
@@ -194,6 +271,7 @@ class Router:
                 success=success,
                 score=score,
                 failure_reason=reason,
+                model_id=self._last_model_id,
             )
             self._outcome_reported = True
         except Exception as e:
