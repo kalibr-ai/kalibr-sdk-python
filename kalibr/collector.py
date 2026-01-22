@@ -3,7 +3,8 @@ OpenTelemetry Collector Setup
 
 Configures OpenTelemetry tracer provider with multiple exporters:
 1. OTLP exporter for sending to OpenTelemetry collectors
-2. File exporter for local JSONL fallback
+2. Kalibr HTTP exporter for sending to Kalibr backend
+3. File exporter for local JSONL fallback
 
 Thread-safe singleton pattern for collector setup.
 """
@@ -11,8 +12,11 @@ Thread-safe singleton pattern for collector setup.
 import json
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+import requests
 
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -24,6 +28,7 @@ from opentelemetry.sdk.trace.export import (
     SpanExporter,
     SpanExportResult,
 )
+from opentelemetry.trace import StatusCode
 
 try:
     from opentelemetry.sdk.trace import ReadableSpan
@@ -84,6 +89,153 @@ class FileSpanExporter(SpanExporter):
         }
 
 
+class KalibrHTTPSpanExporter(SpanExporter):
+    """Export spans to Kalibr backend via HTTP POST"""
+
+    DEFAULT_URL = "https://kalibr-backend.fly.dev/api/ingest"
+
+    def __init__(
+        self,
+        url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ):
+        """Initialize the Kalibr HTTP exporter.
+
+        Args:
+            url: Kalibr collector URL (default: from KALIBR_COLLECTOR_URL env var)
+            api_key: API key (default: from KALIBR_API_KEY env var)
+            tenant_id: Tenant ID (default: from KALIBR_TENANT_ID env var)
+        """
+        self.url = url or os.getenv("KALIBR_COLLECTOR_URL", self.DEFAULT_URL)
+        self.api_key = api_key or os.getenv("KALIBR_API_KEY")
+        self.tenant_id = tenant_id or os.getenv("KALIBR_TENANT_ID", "default")
+        self.environment = os.getenv("KALIBR_ENVIRONMENT", "production")
+
+    def export(self, spans) -> SpanExportResult:
+        """Export spans to Kalibr backend"""
+        if not self.api_key:
+            print("[Kalibr SDK] ⚠️  KALIBR_API_KEY not set, spans will not be sent to backend")
+            return SpanExportResult.SUCCESS
+
+        try:
+            events = [self._convert_span(span) for span in spans]
+
+            headers = {
+                "X-API-Key": self.api_key,
+                "X-Tenant-ID": self.tenant_id,
+                "Content-Type": "application/json",
+            }
+
+            payload = {"events": events}
+
+            response = requests.post(
+                self.url,
+                headers=headers,
+                json=payload,
+                timeout=30,
+            )
+
+            if not response.ok:
+                print(
+                    f"[Kalibr SDK] ❌ Backend rejected spans: {response.status_code} - {response.text}"
+                )
+                return SpanExportResult.FAILURE
+
+            return SpanExportResult.SUCCESS
+
+        except Exception as e:
+            print(f"[Kalibr SDK] ❌ Failed to export spans to backend: {e}")
+            return SpanExportResult.FAILURE
+
+    def shutdown(self):
+        """Shutdown the exporter"""
+        pass
+
+    def _nanos_to_iso(self, nanos: int) -> str:
+        """Convert nanoseconds since epoch to ISO format timestamp"""
+        if nanos is None:
+            return datetime.now(timezone.utc).isoformat()
+        seconds = nanos / 1_000_000_000
+        dt = datetime.fromtimestamp(seconds, tz=timezone.utc)
+        return dt.isoformat()
+
+    def _get_attr(self, span, *keys, default=None):
+        """Get attribute value from span, trying multiple keys"""
+        attrs = dict(span.attributes) if span.attributes else {}
+        for key in keys:
+            if key in attrs:
+                return attrs[key]
+        return default
+
+    def _convert_span(self, span) -> dict:
+        """Convert OTel span to Kalibr event format"""
+
+        # Calculate duration from span times (nanoseconds to milliseconds)
+        duration_ms = 0
+        if span.start_time and span.end_time:
+            duration_ms = int((span.end_time - span.start_time) / 1_000_000)
+
+        # Determine status
+        is_error = (
+            hasattr(span.status, "status_code") and span.status.status_code == StatusCode.ERROR
+        )
+        status = "error" if is_error else "success"
+
+        # Extract provider and model
+        provider = self._get_attr(span, "llm.vendor", "llm.system", "gen_ai.system", default="")
+        model_id = self._get_attr(
+            span, "llm.request.model", "llm.response.model", "gen_ai.request.model", default=""
+        )
+
+        # Extract token counts
+        input_tokens = self._get_attr(
+            span, "llm.usage.prompt_tokens", "gen_ai.usage.prompt_tokens", default=0
+        )
+        output_tokens = self._get_attr(
+            span, "llm.usage.completion_tokens", "gen_ai.usage.completion_tokens", default=0
+        )
+        total_tokens = self._get_attr(
+            span, "llm.usage.total_tokens", "gen_ai.usage.total_tokens", default=0
+        )
+
+        # If total_tokens not provided, calculate it
+        if not total_tokens and (input_tokens or output_tokens):
+            total_tokens = (input_tokens or 0) + (output_tokens or 0)
+
+        # Build event payload
+        event = {
+            "schema_version": "1.0",
+            "trace_id": format(span.context.trace_id, "032x"),
+            "span_id": format(span.context.span_id, "016x"),
+            "parent_id": format(span.parent.span_id, "016x") if span.parent else None,
+            "tenant_id": self.tenant_id,
+            "provider": provider,
+            "model_id": model_id,
+            "model_name": model_id,
+            "operation": span.name,
+            "endpoint": span.name,
+            "input_tokens": input_tokens or 0,
+            "output_tokens": output_tokens or 0,
+            "total_tokens": total_tokens or 0,
+            "cost_usd": self._get_attr(span, "llm.cost_usd", "gen_ai.usage.cost", default=0.0),
+            "latency_ms": self._get_attr(span, "llm.latency_ms", default=duration_ms),
+            "duration_ms": duration_ms,
+            "status": status,
+            "error_type": self._get_attr(span, "error.type", default=None) if is_error else None,
+            "error_message": (
+                self._get_attr(span, "error.message", default=None) if is_error else None
+            ),
+            "timestamp": self._nanos_to_iso(span.end_time),
+            "ts_start": self._nanos_to_iso(span.start_time),
+            "ts_end": self._nanos_to_iso(span.end_time),
+            "goal": self._get_attr(span, "kalibr.goal", default=""),
+            "environment": self.environment,
+        }
+
+        return event
+
+
 _tracer_provider: Optional[TracerProvider] = None
 _is_configured = False
 _collector_lock = threading.Lock()
@@ -97,7 +249,7 @@ def setup_collector(
 ) -> TracerProvider:
     """
     Setup OpenTelemetry collector with multiple exporters
-    
+
     Thread-safe: Uses double-checked locking to ensure single initialization.
 
     Args:
@@ -115,7 +267,7 @@ def setup_collector(
     # First check without lock (fast path)
     if _is_configured and _tracer_provider:
         return _tracer_provider
-    
+
     # Acquire lock for initialization
     with _collector_lock:
         # Double-check inside lock
@@ -137,6 +289,16 @@ def setup_collector(
                 print(f"✅ OTLP exporter configured: {otlp_endpoint}")
             except Exception as e:
                 print(f"⚠️  Failed to configure OTLP exporter: {e}")
+
+        # Add Kalibr HTTP exporter if API key is configured
+        kalibr_api_key = os.getenv("KALIBR_API_KEY")
+        if kalibr_api_key:
+            try:
+                kalibr_exporter = KalibrHTTPSpanExporter()
+                provider.add_span_processor(BatchSpanProcessor(kalibr_exporter))
+                print(f"✅ Kalibr backend exporter configured: {kalibr_exporter.url}")
+            except Exception as e:
+                print(f"⚠️  Failed to configure Kalibr backend exporter: {e}")
 
         # Add file exporter for local fallback
         if file_export:
@@ -177,7 +339,7 @@ def is_configured() -> bool:
 
 def shutdown_collector():
     """Shutdown the tracer provider and flush all spans.
-    
+
     Thread-safe: Uses lock to protect shutdown operation.
     """
     global _tracer_provider, _is_configured

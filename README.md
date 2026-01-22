@@ -1,13 +1,14 @@
-# Kalibr SDK
+# Kalibr
 
-**Intelligent routing for AI agents.** Kalibr picks the best model for each request, learns from outcomes, and shifts traffic to what works.
+Adaptive routing for AI agents. Kalibr learns which models work best for your tasks and routes automatically.
+
+[![PyPI](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
+[![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 ## Installation
 ```bash
 pip install kalibr
-```
-```bash
-export KALIBR_API_KEY=kal_xxx  # Get from dashboard.kalibr.dev
 ```
 
 ## Quick Start
@@ -15,43 +16,37 @@ export KALIBR_API_KEY=kal_xxx  # Get from dashboard.kalibr.dev
 from kalibr import Router
 
 router = Router(
-    goal="book_meeting",
-    paths=["gpt-4o", "claude-3-sonnet", "gpt-4o-mini"],
-    success_when=lambda output: "confirmed" in output.lower()
+    goal="extract_company",
+    paths=["gpt-4o", "claude-sonnet-4-20250514"]
 )
 
 response = router.completion(
-    messages=[{"role": "user", "content": "Book a meeting with John tomorrow"}]
+    messages=[{"role": "user", "content": "Extract the company: Hi, I'm Sarah from Stripe."}]
 )
 
-print(response.choices[0].message.content)
+router.report(success=True)
 ```
 
-That's it. Kalibr handles:
-- ✅ Picking the best model (Thompson Sampling)
-- ✅ Making the API call
-- ✅ Checking success
-- ✅ Learning for next time
-- ✅ Tracing everything
+Kalibr picks the best model, makes the call, and learns from the outcome.
 
 ## How It Works
 
-1. **Define a goal** - What is your agent trying to do?
-2. **Register paths** - Which models/tools can achieve it?
-3. **Report outcomes** - Did it work?
-4. **Kalibr routes** - Traffic shifts to winners
+1. **You define paths** - models (and optionally tools/params) that can handle your task
+2. **Kalibr picks** - uses Thompson Sampling to balance exploration vs exploitation
+3. **You report outcomes** - tell Kalibr if it worked
+4. **Kalibr learns** - routes more traffic to what works
 
 ## Paths
 
 A path is a model + optional tools + optional params:
 ```python
-# Simple: just models
-paths = ["gpt-4o", "claude-3-sonnet"]
+# Just models
+paths = ["gpt-4o", "claude-sonnet-4-20250514", "gpt-4o-mini"]
 
 # With tools
 paths = [
     {"model": "gpt-4o", "tools": ["web_search"]},
-    {"model": "claude-3-sonnet", "tools": ["web_search", "browser"]},
+    {"model": "claude-sonnet-4-20250514", "tools": ["web_search", "browser"]},
 ]
 
 # With params
@@ -61,106 +56,165 @@ paths = [
 ]
 ```
 
-## Success Criteria
+## Advanced Path Configuration
 
-### Auto-detect from output
+### Routing Between Parameters
+
+Kalibr can route between different parameter configurations of the same model:
+```python
+from kalibr import Router
+
+router = Router(
+    goal="creative_writing",
+    paths=[
+        {"model": "gpt-4o", "params": {"temperature": 0.3}},
+        {"model": "gpt-4o", "params": {"temperature": 0.9}},
+        {"model": "claude-sonnet-4-20250514", "params": {"temperature": 0.7}}
+    ]
+)
+
+response = router.completion(messages=[...])
+router.report(success=True)
+```
+
+Each unique `(model, params)` combination is tracked separately. Kalibr learns which configuration works best for your specific goal.
+
+### Routing Between Tools
+```python
+router = Router(
+    goal="research_task",
+    paths=[
+        {"model": "gpt-4o", "tools": ["web_search"]},
+        {"model": "gpt-4o", "tools": ["code_interpreter"]},
+        {"model": "claude-sonnet-4-20250514"}
+    ]
+)
+```
+
+### When to Use get_policy() Instead of Router
+
+For most use cases, use `Router`. It handles provider dispatching and response conversion automatically.
+
+Use `get_policy()` for advanced scenarios:
+- Integrating with frameworks like LangChain that wrap LLM calls
+- Custom retry logic or provider-specific features
+- Building tools that need fine-grained control
+```python
+from kalibr import get_policy, report_outcome
+
+policy = get_policy(goal="summarize")
+model = policy["recommended_model"]
+
+# You call the provider yourself
+if model.startswith("gpt"):
+    client = OpenAI()
+    response = client.chat.completions.create(model=model, messages=[...])
+
+report_outcome(trace_id=trace_id, goal="summarize", success=True)
+```
+
+## Outcome Reporting
+
+### Automatic (with success_when)
 ```python
 router = Router(
     goal="summarize",
-    paths=["gpt-4o", "claude-3-sonnet"],
+    paths=["gpt-4o", "claude-sonnet-4-20250514"],
     success_when=lambda output: len(output) > 100
 )
-```
-
-### Manual reporting
-```python
-router = Router(goal="book_meeting", paths=["gpt-4o", "claude-3-sonnet"])
 
 response = router.completion(messages=[...])
+# Outcome reported automatically based on success_when
+```
 
-# Your verification logic
+### Manual
+```python
+router = Router(goal="book_meeting", paths=["gpt-4o", "claude-sonnet-4-20250514"])
+response = router.completion(messages=[...])
+
 meeting_created = check_calendar_api()
-
 router.report(success=meeting_created)
 ```
 
-## Framework Integration
-
-### LangChain
+## LangChain Integration
+```bash
+pip install kalibr[langchain]
+```
 ```python
 from kalibr import Router
 
-router = Router(goal="summarize", paths=["gpt-4o", "claude-3-sonnet"])
+router = Router(goal="summarize", paths=["gpt-4o", "claude-sonnet-4-20250514"])
 llm = router.as_langchain()
 
 chain = prompt | llm | parser
-result = chain.invoke({"text": "..."})
 ```
 
-### CrewAI
+## Auto-Instrumentation
+
+Kalibr auto-instruments OpenAI, Anthropic, and Google SDKs on import:
 ```python
-from kalibr import Router
+import kalibr  # Must be first import
+from openai import OpenAI
 
-router = Router(goal="research", paths=["gpt-4o", "claude-3-sonnet"])
-
-agent = Agent(
-    role="Researcher",
-    llm=router.as_langchain(),
-    ...
-)
+client = OpenAI()
+response = client.chat.completions.create(model="gpt-4o", messages=[...])
+# Traced automatically
 ```
 
-## Observability (Included)
+Disable with `KALIBR_AUTO_INSTRUMENT=false`.
 
-Every call is automatically traced:
+## Low-Level API
 
-- Token counts and costs
-- Latency (p50, p95, p99)
-- Tool usage
-- Errors with stack traces
-
-View in the [dashboard](https://dashboard.kalibr.dev) or use callback handlers directly:
+For advanced use cases, you can use the intelligence API directly:
 ```python
-from kalibr_langchain import KalibrCallbackHandler
+from kalibr import register_path, decide, report_outcome
 
-handler = KalibrCallbackHandler()
-chain.invoke({"input": "..."}, config={"callbacks": [handler]})
+# Register paths
+register_path(goal="book_meeting", model_id="gpt-4o")
+register_path(goal="book_meeting", model_id="claude-sonnet-4-20250514")
+
+# Get routing decision
+decision = decide(goal="book_meeting")
+model = decision["model_id"]
+
+# Make your own LLM call, then report
+report_outcome(trace_id="...", goal="book_meeting", success=True)
 ```
 
-## Pricing
-
-| Tier | Routing Decisions | Price |
-|------|-------------------|-------|
-| Free | 1,000/month | $0 |
-| Pro | 50,000/month | $49/month |
-| Enterprise | Unlimited | Custom |
-
-## API Reference
-
-### Router
-```python
-Router(
-    goal: str,                    # Required: name of the goal
-    paths: List[str | dict],      # Models/tools to route between
-    success_when: Callable,       # Optional: auto-evaluate success
-    exploration_rate: float,      # Optional: 0.0-1.0, default 0.1
-)
+## Other Integrations
+```bash
+pip install kalibr[crewai]        # CrewAI
+pip install kalibr[openai-agents] # OpenAI Agents SDK
+pip install kalibr[langchain-all] # LangChain with all providers
 ```
 
-### Methods
-```python
-router.completion(messages, **kwargs)  # Make routed request
-router.report(success, reason=None)    # Report outcome manually
-router.add_path(model, tools=None)     # Add path dynamically
-router.as_langchain()                  # Get LangChain-compatible LLM
+## Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KALIBR_API_KEY` | API key from dashboard | Required |
+| `KALIBR_TENANT_ID` | Tenant ID from dashboard | Required |
+| `KALIBR_AUTO_INSTRUMENT` | Auto-instrument LLM SDKs | `true` |
+| `KALIBR_INTELLIGENCE_URL` | Intelligence service URL | `https://kalibr-intelligence.fly.dev` |
+
+## Development
+```bash
+git clone https://github.com/kalibr-ai/kalibr-sdk-python.git
+cd kalibr-sdk-python
+pip install -e ".[dev]"
+pytest
 ```
 
-## Links
+## Contributing
 
-- [Documentation](https://docs.kalibr.dev)
-- [Dashboard](https://dashboard.kalibr.dev)
-- [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT
+Apache-2.0
+
+## Links
+
+- [Docs](https://kalibr.dev/docs)
+- [Dashboard](https://dashboard.kalibr.systems)
+- [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)

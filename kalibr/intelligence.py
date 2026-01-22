@@ -154,6 +154,7 @@ class KalibrIntelligence:
         metadata: dict | None = None,
         tool_id: str | None = None,
         execution_params: dict | None = None,
+        model_id: str | None = None,
     ) -> dict[str, Any]:
         """Report execution outcome for a goal.
 
@@ -203,6 +204,7 @@ class KalibrIntelligence:
                 "metadata": metadata,
                 "tool_id": tool_id,
                 "execution_params": execution_params,
+                "model_id": model_id,
             },
         )
         return response.json()
