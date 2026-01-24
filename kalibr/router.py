@@ -198,12 +198,20 @@ class Router:
                     router_span.set_attribute("kalibr.fallback", True)
                     router_span.set_attribute("kalibr.fallback_reason", str(e))
 
-            # Store trace_id from THIS span for outcome reporting
-            span_context = router_span.get_span_context()
-            trace_id = format(span_context.trace_id, "032x")
-            # Check if trace_id is valid (not all zeros from unconfigured tracer)
-            if trace_id == "0" * 32:
-                trace_id = uuid.uuid4().hex
+            # Use trace_id from decision if available (links outcome to routing decision)
+            # Fall back to OTel span trace_id for backwards compatibility
+            decision_trace_id = self._last_decision.get("trace_id") if self._last_decision else None
+
+            if decision_trace_id:
+                trace_id = decision_trace_id
+            else:
+                # Fallback: generate from OTel span or UUID
+                span_context = router_span.get_span_context()
+                trace_id = format(span_context.trace_id, "032x")
+                if trace_id == "0" * 32:
+                    trace_id = uuid.uuid4().hex
+
+            logger.debug(f"Using trace_id={trace_id} (from_decision={bool(decision_trace_id)})")
             self._last_trace_id = trace_id
             self._last_model_id = model_id
             router_span.set_attribute("kalibr.trace_id", trace_id)
