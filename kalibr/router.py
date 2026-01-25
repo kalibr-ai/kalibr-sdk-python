@@ -216,7 +216,7 @@ class Router:
         self._last_model_id = model_id
 
         # Step 3: Create OTel context with intelligence trace_id
-        otel_context = _create_context_with_trace_id(trace_id) if decision_trace_id else None
+        otel_context = _create_context_with_trace_id(trace_id) if trace_id else None
 
         # Step 4: Create span with custom context (child spans inherit trace_id)
         tracer = otel_trace.get_tracer("kalibr.router")
