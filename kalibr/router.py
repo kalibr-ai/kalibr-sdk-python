@@ -8,11 +8,41 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from opentelemetry import trace as otel_trace
+from opentelemetry.trace import SpanContext, TraceFlags, NonRecordingSpan, set_span_in_context
+from opentelemetry.context import Context
 
 logger = logging.getLogger(__name__)
 
 # Type for paths - either string or dict
 PathSpec = Union[str, Dict[str, Any]]
+
+
+def _create_context_with_trace_id(trace_id_hex: str) -> Context | None:
+    """Create an OTel context with a specific trace_id.
+
+    This allows child spans to inherit the intelligence service's trace_id,
+    enabling JOINs between outcomes and traces tables.
+    """
+    try:
+        # Convert 32-char hex string to 128-bit int
+        trace_id_int = int(trace_id_hex, 16)
+        if trace_id_int == 0:
+            return None
+
+        # Create span context with our trace_id
+        span_context = SpanContext(
+            trace_id=trace_id_int,
+            span_id=0xDEADBEEF,  # Placeholder, real span will have its own
+            is_remote=True,  # Treat as remote parent so new span_id is generated
+            trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        )
+
+        # Create a non-recording parent span and set in context
+        parent_span = NonRecordingSpan(span_context)
+        return set_span_in_context(parent_span)
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Could not create OTel context with trace_id: {e}")
+        return None
 
 
 class Router:
@@ -145,78 +175,73 @@ class Router:
         Returns:
             OpenAI-compatible ChatCompletion response with added attribute:
                 - kalibr_trace_id: Trace ID for explicit outcome reporting
-
-        Raises:
-            openai.OpenAIError: If OpenAI API call fails
-            anthropic.AnthropicError: If Anthropic API call fails
-            google.generativeai.GenerativeAIError: If Google API call fails
-            ImportError: If required provider SDK is not installed
         """
         from kalibr.intelligence import decide
 
+        # Reset state for new request
+        self._outcome_reported = False
+
+        # Step 1: Get routing decision FIRST (before creating span)
+        decision = None
+        model_id = None
+        tool_id = None
+        params = {}
+
+        if force_model:
+            model_id = force_model
+            self._last_decision = {"model_id": model_id, "forced": True}
+        else:
+            try:
+                decision = decide(goal=self.goal)
+                model_id = decision.get("model_id") or self._paths[0]["model"]
+                tool_id = decision.get("tool_id")
+                params = decision.get("params") or {}
+                self._last_decision = decision
+            except Exception as e:
+                logger.warning(f"Routing failed, using fallback: {e}")
+                model_id = self._paths[0]["model"]
+                tool_id = self._paths[0].get("tools")
+                params = self._paths[0].get("params") or {}
+                self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
+
+        # Step 2: Determine trace_id
+        decision_trace_id = self._last_decision.get("trace_id") if self._last_decision else None
+
+        if decision_trace_id:
+            trace_id = decision_trace_id
+        else:
+            trace_id = uuid.uuid4().hex  # Fallback: generate OTel-compatible format
+
+        self._last_trace_id = trace_id
+        self._last_model_id = model_id
+
+        # Step 3: Create OTel context with intelligence trace_id
+        otel_context = _create_context_with_trace_id(trace_id) if decision_trace_id else None
+
+        # Step 4: Create span with custom context (child spans inherit trace_id)
         tracer = otel_trace.get_tracer("kalibr.router")
 
         with tracer.start_as_current_span(
             "kalibr.router.completion",
+            context=otel_context,
             attributes={
                 "kalibr.goal": self.goal,
+                "kalibr.trace_id": trace_id,
+                "kalibr.model_id": model_id,
             }
         ) as router_span:
-            # Reset state for new request
-            self._outcome_reported = False
-
-            # Get routing decision (or use forced model)
+            # Add decision attributes
             if force_model:
-                model_id = force_model
-                tool_id = None
-                params = {}
-                self._last_decision = {"model_id": model_id, "forced": True}
-                router_span.set_attribute("kalibr.model_id", model_id)
                 router_span.set_attribute("kalibr.forced", True)
+            elif decision:
+                router_span.set_attribute("kalibr.path_id", decision.get("path_id", ""))
+                router_span.set_attribute("kalibr.reason", decision.get("reason", ""))
+                router_span.set_attribute("kalibr.exploration", decision.get("exploration", False))
+                router_span.set_attribute("kalibr.confidence", decision.get("confidence", 0.0))
             else:
-                try:
-                    decision = decide(goal=self.goal)
-                    model_id = decision.get("model_id") or self._paths[0]["model"]
-                    tool_id = decision.get("tool_id")
-                    params = decision.get("params") or {}
-                    self._last_decision = decision
+                router_span.set_attribute("kalibr.fallback", True)
 
-                    # Add decision attributes to span
-                    router_span.set_attribute("kalibr.path_id", decision.get("path_id", ""))
-                    router_span.set_attribute("kalibr.model_id", model_id)
-                    router_span.set_attribute("kalibr.reason", decision.get("reason", ""))
-                    router_span.set_attribute("kalibr.exploration", decision.get("exploration", False))
-                    router_span.set_attribute("kalibr.confidence", decision.get("confidence", 0.0))
-                except Exception as e:
-                    # Fallback to first path if routing fails
-                    logger.warning(f"Routing failed, using fallback: {e}")
-                    model_id = self._paths[0]["model"]
-                    tool_id = self._paths[0].get("tools")
-                    params = self._paths[0].get("params") or {}
-                    self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
-                    router_span.set_attribute("kalibr.model_id", model_id)
-                    router_span.set_attribute("kalibr.fallback", True)
-                    router_span.set_attribute("kalibr.fallback_reason", str(e))
-
-            # Use trace_id from decision if available (links outcome to routing decision)
-            # Fall back to OTel span trace_id for backwards compatibility
-            decision_trace_id = self._last_decision.get("trace_id") if self._last_decision else None
-
-            if decision_trace_id:
-                trace_id = decision_trace_id
-            else:
-                # Fallback: generate from OTel span or UUID
-                span_context = router_span.get_span_context()
-                trace_id = format(span_context.trace_id, "032x")
-                if trace_id == "0" * 32:
-                    trace_id = uuid.uuid4().hex
-
-            logger.debug(f"Using trace_id={trace_id} (from_decision={bool(decision_trace_id)})")
-            self._last_trace_id = trace_id
-            self._last_model_id = model_id
-            router_span.set_attribute("kalibr.trace_id", trace_id)
-
-            # Dispatch to provider (will be child span via auto-instrumentation)
+            # Step 5: Dispatch to provider
             try:
                 response = self._dispatch(model_id, messages, tool_id, **{**params, **kwargs})
 
@@ -234,7 +259,6 @@ class Router:
                 return response
 
             except Exception as e:
-                # Record error on span
                 router_span.set_attribute("error", True)
                 router_span.set_attribute("error.type", type(e).__name__)
 
