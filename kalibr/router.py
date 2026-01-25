@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 PathSpec = Union[str, Dict[str, Any]]
 
 
-def _create_context_with_trace_id(trace_id_hex: str) -> Context | None:
+def _create_context_with_trace_id(trace_id_hex: str) -> Optional[Context]:
     """Create an OTel context with a specific trace_id.
 
     This allows child spans to inherit the intelligence service's trace_id,
