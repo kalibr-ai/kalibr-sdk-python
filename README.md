@@ -11,6 +11,15 @@ Adaptive routing for AI agents. Kalibr learns which models work best for your ta
 pip install kalibr
 ```
 
+## Setup
+
+Get your credentials from [dashboard.kalibr.systems/settings](https://dashboard.kalibr.systems/settings), then:
+```bash
+export KALIBR_API_KEY=your-api-key
+export KALIBR_TENANT_ID=your-tenant-id
+export OPENAI_API_KEY=sk-...  # or ANTHROPIC_API_KEY for Claude models
+```
+
 ## Quick Start
 ```python
 from kalibr import Router
@@ -215,6 +224,6 @@ Apache-2.0
 
 ## Links
 
-- [Docs](https://kalibr.dev/docs)
+- [Docs](https://kalibr.systems/docs)
 - [Dashboard](https://dashboard.kalibr.systems)
 - [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
