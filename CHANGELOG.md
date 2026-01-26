@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Helpful error messages for missing credentials**: Router now validates KALIBR_API_KEY and KALIBR_TENANT_ID on initialization and provides clear error messages with links to the dashboard settings page
 - Comprehensive thread-safety test suite (`tests/test_thread_safety.py`)
   - Tests for concurrent singleton creation (all patterns)
   - Tests for concurrent TraceCapsule operations
