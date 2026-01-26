@@ -112,6 +112,25 @@ class Router:
             auto_register: If True, register paths on init
         """
         self.goal = goal
+
+        # Validate required environment variables
+        api_key = os.environ.get('KALIBR_API_KEY')
+        tenant_id = os.environ.get('KALIBR_TENANT_ID')
+
+        if not api_key:
+            raise ValueError(
+                "KALIBR_API_KEY environment variable not set.\n"
+                "Get your API key from: https://dashboard.kalibr.systems/settings\n"
+                "Then run: export KALIBR_API_KEY=your-key-here"
+            )
+
+        if not tenant_id:
+            raise ValueError(
+                "KALIBR_TENANT_ID environment variable not set.\n"
+                "Find your Tenant ID at: https://dashboard.kalibr.systems/settings\n"
+                "Then run: export KALIBR_TENANT_ID=your-tenant-id"
+            )
+
         self.success_when = success_when
         self.exploration_rate = exploration_rate
         self._last_trace_id: Optional[str] = None
