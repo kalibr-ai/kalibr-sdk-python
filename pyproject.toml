@@ -1,0 +1,113 @@
+[build-system]
+requires = ["setuptools>=61.0,<77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kalibr"
+version = "1.2.11"
+description = "Adaptive routing for AI agents. Learns which models work best and routes automatically."
+authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+keywords = [
+    "ai", "mcp", "gpt", "claude", "gemini", "copilot",
+    "openai", "anthropic", "google", "microsoft",
+    "observability", "telemetry", "tracing", "llm",
+    "schema-generation", "api", "multi-model", "langchain", "crewai"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "httpx>=0.27.0",
+    "tiktoken>=0.8.0",
+    "fastapi>=0.110.1",
+    "uvicorn>=0.25.0",
+    "pydantic>=2.6.4",
+    "typer>=0.9.0",
+    "python-multipart>=0.0.9",
+    "rich>=10.0.0",
+    "requests>=2.31.0",
+    # OpenTelemetry for SDK instrumentation (Phase 1)
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp>=1.20.0",
+]
+
+[project.optional-dependencies]
+# LangChain integration
+langchain = [
+    "langchain-core>=0.1.0",
+]
+langchain-openai = [
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.1.0",
+]
+langchain-anthropic = [
+    "langchain-core>=0.1.0",
+    "langchain-anthropic>=0.1.0",
+]
+langchain-google = [
+    "langchain-core>=0.1.0",
+    "langchain-google-genai>=0.0.10",
+]
+langchain-all = [
+    "langchain-core>=0.1.0",
+    "langchain-openai>=0.1.0",
+    "langchain-anthropic>=0.1.0",
+    "langchain-google-genai>=0.0.10",
+]
+# CrewAI integration
+crewai = [
+    "crewai>=0.28.0",
+]
+# OpenAI Agents SDK integration
+openai-agents = [
+    "openai-agents>=0.0.3",
+]
+# All integrations
+integrations = [
+    "langchain-core>=0.1.0",
+    "crewai>=0.28.0",
+    "openai-agents>=0.0.3",
+]
+# Development dependencies
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+kalibr = "kalibr.cli.main:app"
+
+[project.urls]
+Homepage = "https://github.com/kalibr-ai/kalibr-sdk-python"
+Documentation = "https://kalibr.systems/docs"
+Repository = "https://github.com/kalibr-ai/kalibr-sdk-python"
+Issues = "https://github.com/kalibr-ai/kalibr-sdk-python/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*", "kalibr_openai_agents*"]
+exclude = ["tests*", "examples*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

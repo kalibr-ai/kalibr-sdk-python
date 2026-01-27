@@ -1,0 +1,276 @@
+"""
+Google Generative AI SDK Instrumentation
+
+Monkey-patches the Google Generative AI SDK to automatically emit OpenTelemetry spans
+for all content generation API calls.
+
+Thread-safe singleton pattern using double-checked locking.
+"""
+
+import threading
+import time
+from functools import wraps
+from typing import Any, Dict, Optional
+
+from opentelemetry.trace import SpanKind
+
+from .base import BaseCostAdapter, BaseInstrumentation
+
+
+class GoogleCostAdapter(BaseCostAdapter):
+    """Cost calculation adapter for Google Generative AI models.
+    
+    Uses centralized pricing from kalibr.pricing module.
+    """
+
+    def get_vendor_name(self) -> str:
+        """Return vendor name for Google."""
+        return "google"
+
+    def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
+        """Calculate cost in USD for a Google Generative AI API call.
+        
+        Args:
+            model: Model identifier (e.g., "gemini-1.5-pro", "gemini-2.0-flash")
+            usage: Token usage dict with prompt_tokens and completion_tokens
+            
+        Returns:
+            Cost in USD (rounded to 6 decimal places)
+        """
+        # Get pricing from centralized module (handles normalization)
+        pricing = self.get_pricing_for_model(model)
+
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+
+        # Calculate cost (pricing is per 1M tokens)
+        input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
+        output_cost = (completion_tokens / 1_000_000) * pricing["output"]
+
+        return round(input_cost + output_cost, 6)
+
+
+class GoogleInstrumentation(BaseInstrumentation):
+    """Instrumentation for Google Generative AI SDK"""
+
+    def __init__(self):
+        super().__init__("kalibr.google")
+        self._original_generate_content = None
+        self._original_async_generate_content = None
+        self.cost_adapter = GoogleCostAdapter()
+
+    def instrument(self) -> bool:
+        """Apply monkey-patching to Google Generative AI SDK"""
+        if self._is_instrumented:
+            return True
+
+        try:
+            import google.generativeai as genai
+            from google.generativeai.generative_models import GenerativeModel
+
+            # Patch sync method
+            if hasattr(GenerativeModel, "generate_content"):
+                self._original_generate_content = GenerativeModel.generate_content
+                GenerativeModel.generate_content = self._traced_generate_wrapper(
+                    GenerativeModel.generate_content
+                )
+
+            # Patch async method (if available)
+            if hasattr(GenerativeModel, "generate_content_async"):
+                self._original_async_generate_content = GenerativeModel.generate_content_async
+                GenerativeModel.generate_content_async = self._traced_async_generate_wrapper(
+                    GenerativeModel.generate_content_async
+                )
+
+            self._is_instrumented = True
+            return True
+
+        except ImportError:
+            print("⚠️  Google Generative AI SDK not installed, skipping instrumentation")
+            return False
+        except Exception as e:
+            print(f"❌ Failed to instrument Google Generative AI SDK: {e}")
+            return False
+
+    def uninstrument(self) -> bool:
+        """Remove monkey-patching from Google Generative AI SDK"""
+        if not self._is_instrumented:
+            return True
+
+        try:
+            import google.generativeai as genai
+            from google.generativeai.generative_models import GenerativeModel
+
+            # Restore sync method
+            if self._original_generate_content:
+                GenerativeModel.generate_content = self._original_generate_content
+
+            # Restore async method
+            if self._original_async_generate_content:
+                GenerativeModel.generate_content_async = self._original_async_generate_content
+
+            self._is_instrumented = False
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to uninstrument Google Generative AI SDK: {e}")
+            return False
+
+    def _traced_generate_wrapper(self, original_func):
+        """Wrapper for sync generate_content method"""
+
+        @wraps(original_func)
+        def wrapper(self_instance, *args, **kwargs):
+            # Extract model name from instance
+            model = getattr(self_instance, "_model_name", "unknown")
+
+            # Create span with initial attributes
+            with self.tracer.start_as_current_span(
+                "google.generativeai.generate_content",
+                kind=SpanKind.CLIENT,
+                attributes={
+                    "llm.vendor": "google",
+                    "llm.request.model": model,
+                    "llm.system": "google.generativeai",
+                },
+            ) as span:
+                start_time = time.time()
+
+                # Phase 3: Inject Kalibr context for HTTP→SDK linking
+                try:
+                    from kalibr.context import inject_kalibr_context_into_span
+
+                    inject_kalibr_context_into_span(span)
+                except Exception:
+                    pass  # Fail silently if context not available
+
+                try:
+                    # Call original method
+                    result = original_func(self_instance, *args, **kwargs)
+
+                    # Extract and set response metadata
+                    self._set_response_attributes(span, result, model, start_time)
+
+                    return result
+
+                except Exception as e:
+                    self.set_error(span, e)
+                    raise
+
+        return wrapper
+
+    def _traced_async_generate_wrapper(self, original_func):
+        """Wrapper for async generate_content method"""
+
+        @wraps(original_func)
+        async def wrapper(self_instance, *args, **kwargs):
+            # Extract model name from instance
+            model = getattr(self_instance, "_model_name", "unknown")
+
+            # Create span with initial attributes
+            with self.tracer.start_as_current_span(
+                "google.generativeai.generate_content",
+                kind=SpanKind.CLIENT,
+                attributes={
+                    "llm.vendor": "google",
+                    "llm.request.model": model,
+                    "llm.system": "google.generativeai",
+                },
+            ) as span:
+                start_time = time.time()
+
+                # Phase 3: Inject Kalibr context for HTTP→SDK linking
+                try:
+                    from kalibr.context import inject_kalibr_context_into_span
+
+                    inject_kalibr_context_into_span(span)
+                except Exception:
+                    pass  # Fail silently if context not available
+
+                try:
+                    # Call original async method
+                    result = await original_func(self_instance, *args, **kwargs)
+
+                    # Extract and set response metadata
+                    self._set_response_attributes(span, result, model, start_time)
+
+                    return result
+
+                except Exception as e:
+                    self.set_error(span, e)
+                    raise
+
+        return wrapper
+
+    def _set_response_attributes(self, span, result, model: str, start_time: float) -> None:
+        """Extract metadata from response and set span attributes"""
+        try:
+            # Model (from instance)
+            span.set_attribute("llm.response.model", model)
+
+            # Token usage
+            if hasattr(result, "usage_metadata") and result.usage_metadata:
+                usage = result.usage_metadata
+
+                prompt_tokens = getattr(usage, "prompt_token_count", 0)
+                completion_tokens = getattr(usage, "candidates_token_count", 0)
+                total_tokens = getattr(
+                    usage, "total_token_count", prompt_tokens + completion_tokens
+                )
+
+                span.set_attribute("llm.usage.prompt_tokens", prompt_tokens)
+                span.set_attribute("llm.usage.completion_tokens", completion_tokens)
+                span.set_attribute("llm.usage.total_tokens", total_tokens)
+
+                # Calculate cost
+                cost = self.cost_adapter.calculate_cost(
+                    model,
+                    {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                    },
+                )
+                span.set_attribute("llm.cost_usd", cost)
+
+            # Latency
+            latency_ms = (time.time() - start_time) * 1000
+            span.set_attribute("llm.latency_ms", round(latency_ms, 2))
+
+            # Finish reason (if available)
+            if hasattr(result, "candidates") and result.candidates:
+                candidate = result.candidates[0]
+                if hasattr(candidate, "finish_reason"):
+                    span.set_attribute("llm.response.finish_reason", str(candidate.finish_reason))
+
+        except Exception as e:
+            # Don't fail the call if metadata extraction fails
+            span.set_attribute("llm.metadata_extraction_error", str(e))
+
+
+# Singleton instance
+_google_instrumentation = None
+_google_lock = threading.Lock()
+
+
+def get_instrumentation() -> GoogleInstrumentation:
+    """Get or create the Google instrumentation singleton.
+    
+    Thread-safe singleton pattern using double-checked locking.
+    """
+    global _google_instrumentation
+    if _google_instrumentation is None:
+        with _google_lock:
+            # Double-check inside lock to prevent race condition
+            if _google_instrumentation is None:
+                _google_instrumentation = GoogleInstrumentation()
+    return _google_instrumentation
+
+
+def instrument() -> bool:
+    """Instrument Google Generative AI SDK"""
+    return get_instrumentation().instrument()
+
+
+def uninstrument() -> bool:
+    """Uninstrument Google Generative AI SDK"""
+    return get_instrumentation().uninstrument()
