@@ -6,6 +6,11 @@ Adaptive routing for AI agents. Kalibr learns which models work best for your ta
 [![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+## Requirements
+
+- Python 3.10 or higher
+- pip 21.0 or higher
+
 ## Installation
 ```bash
 pip install kalibr
