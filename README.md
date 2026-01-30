@@ -11,6 +11,11 @@ Adaptive routing for AI agents. Kalibr learns which models work best for your ta
 pip install kalibr
 ```
 
+For accurate token counting, install with:
+```bash
+pip install kalibr[tokens]
+```
+
 ## Setup
 
 Get your credentials from [dashboard.kalibr.systems/settings](https://dashboard.kalibr.systems/settings), then:
@@ -192,6 +197,7 @@ report_outcome(trace_id="...", goal="book_meeting", success=True)
 
 ## Other Integrations
 ```bash
+pip install kalibr[tokens]        # Accurate token counting (tiktoken)
 pip install kalibr[crewai]        # CrewAI
 pip install kalibr[openai-agents] # OpenAI Agents SDK
 pip install kalibr[langchain-all] # LangChain with all providers

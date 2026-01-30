@@ -31,7 +31,6 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.27.0",
-    "tiktoken>=0.8.0",
     "fastapi>=0.110.1",
     "uvicorn>=0.25.0",
     "pydantic>=2.6.4",
@@ -46,6 +45,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Token counting (optional - for accurate token counts)
+tokens = [
+    "tiktoken>=0.8.0",
+]
 # LangChain integration
 langchain = [
     "langchain-core>=0.1.0",
