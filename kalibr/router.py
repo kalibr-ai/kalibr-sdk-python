@@ -260,34 +260,65 @@ class Router:
             else:
                 router_span.set_attribute("kalibr.fallback", True)
 
-            # Step 5: Dispatch to provider
-            try:
-                response = self._dispatch(model_id, messages, tool_id, **{**params, **kwargs})
+            # Step 5: Dispatch to provider with fallback to other paths
+            # Build ordered list of paths to try: selected model first, then remaining paths
+            paths_to_try = []
+            seen_models = set()
 
-                # Auto-report if success_when provided
-                if self.success_when and not self._outcome_reported:
-                    try:
-                        output = response.choices[0].message.content or ""
-                        success = self.success_when(output)
-                        self.report(success=success)
-                    except Exception as e:
-                        logger.warning(f"Auto-outcome evaluation failed: {e}")
+            # Add selected model first (using decision's parameters)
+            paths_to_try.append({"model": model_id, "tools": tool_id, "params": params})
+            seen_models.add(model_id)
 
-                # Add trace_id to response for explicit linkage
-                response.kalibr_trace_id = trace_id
-                return response
+            # Add remaining paths, skipping duplicates
+            for path in self._paths:
+                if path["model"] not in seen_models:
+                    paths_to_try.append(path)
+                    seen_models.add(path["model"])
 
-            except Exception as e:
-                router_span.set_attribute("error", True)
-                router_span.set_attribute("error.type", type(e).__name__)
+            last_exception = None
+            for i, path in enumerate(paths_to_try):
+                current_model = path["model"]
+                current_tools = path.get("tools")
+                current_params = path.get("params") or {}
 
-                # Auto-report failure
-                if not self._outcome_reported:
+                if i > 0:
+                    logger.warning(f"Trying fallback model: {current_model}")
+
+                try:
+                    response = self._dispatch(current_model, messages, current_tools, **{**current_params, **kwargs})
+
+                    # Update last_model_id to reflect the model that actually succeeded
+                    self._last_model_id = current_model
+
+                    # Auto-report success if success_when provided
+                    if self.success_when and not self._outcome_reported:
+                        try:
+                            output = response.choices[0].message.content or ""
+                            success = self.success_when(output)
+                            self.report(success=success)
+                        except Exception as e:
+                            logger.warning(f"Auto-outcome evaluation failed: {e}")
+
+                    # Add trace_id to response for explicit linkage
+                    response.kalibr_trace_id = trace_id
+                    return response
+
+                except Exception as e:
+                    last_exception = e
+                    logger.warning(f"Provider failed for {current_model}: {type(e).__name__}: {e}")
+
+                    # Report failure for this path
                     try:
                         self.report(success=False, reason=f"provider_error: {type(e).__name__}")
                     except:
                         pass
-                raise
+                    # Reset so we can report for next attempt
+                    self._outcome_reported = False
+
+            # All paths failed - set error attributes on span and raise
+            router_span.set_attribute("error", True)
+            router_span.set_attribute("error.type", type(last_exception).__name__)
+            raise last_exception
 
     def report(
         self,

@@ -54,3 +54,117 @@ class TestRouterReport:
         router._outcome_reported = True
         # Should not raise, just warn
         router.report(success=True)
+
+
+class TestRouterFallback:
+    """Tests for provider fallback behavior."""
+
+    @patch("kalibr.router.Router._call_anthropic")
+    @patch("kalibr.router.Router._call_openai")
+    @patch("kalibr.intelligence.decide")
+    @patch("kalibr.intelligence.report_outcome")
+    def test_fallback_on_provider_failure(
+        self, mock_report, mock_decide, mock_openai, mock_anthropic
+    ):
+        """When first provider fails, router should try the next path."""
+        # Setup: decide returns gpt-4o, but OpenAI fails
+        mock_decide.return_value = {"model_id": "gpt-4o", "trace_id": "test-trace"}
+        mock_openai.side_effect = Exception("OpenAI API key invalid")
+
+        # Anthropic succeeds
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "success"
+        mock_anthropic.return_value = mock_response
+
+        router = Router(
+            goal="test",
+            paths=["gpt-4o", "claude-3-sonnet"],
+            auto_register=False
+        )
+        response = router.completion(messages=[{"role": "user", "content": "test"}])
+
+        # Verify OpenAI was tried first, then Anthropic
+        mock_openai.assert_called_once()
+        mock_anthropic.assert_called_once()
+
+        # Verify the successful model is tracked
+        assert router._last_model_id == "claude-3-sonnet"
+        assert response.kalibr_trace_id == "test-trace"
+
+    @patch("kalibr.router.Router._call_anthropic")
+    @patch("kalibr.router.Router._call_openai")
+    @patch("kalibr.intelligence.decide")
+    @patch("kalibr.intelligence.report_outcome")
+    def test_raises_when_all_providers_fail(
+        self, mock_report, mock_decide, mock_openai, mock_anthropic
+    ):
+        """When all providers fail, router should raise the last exception."""
+        mock_decide.return_value = {"model_id": "gpt-4o", "trace_id": "test-trace"}
+        mock_openai.side_effect = Exception("OpenAI failed")
+        mock_anthropic.side_effect = Exception("Anthropic failed")
+
+        router = Router(
+            goal="test",
+            paths=["gpt-4o", "claude-3-sonnet"],
+            auto_register=False
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            router.completion(messages=[{"role": "user", "content": "test"}])
+
+        # Should raise the last exception (Anthropic's)
+        assert "Anthropic failed" in str(exc_info.value)
+
+    @patch("kalibr.router.Router._call_openai")
+    @patch("kalibr.intelligence.decide")
+    @patch("kalibr.intelligence.report_outcome")
+    def test_no_fallback_when_first_succeeds(
+        self, mock_report, mock_decide, mock_openai
+    ):
+        """When first provider succeeds, no fallback should be attempted."""
+        mock_decide.return_value = {"model_id": "gpt-4o", "trace_id": "test-trace"}
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "success"
+        mock_openai.return_value = mock_response
+
+        router = Router(
+            goal="test",
+            paths=["gpt-4o", "claude-3-sonnet"],
+            auto_register=False
+        )
+        response = router.completion(messages=[{"role": "user", "content": "test"}])
+
+        # Only OpenAI should be called
+        mock_openai.assert_called_once()
+        assert router._last_model_id == "gpt-4o"
+
+    @patch("kalibr.router.Router._call_anthropic")
+    @patch("kalibr.router.Router._call_openai")
+    @patch("kalibr.intelligence.decide")
+    @patch("kalibr.intelligence.report_outcome")
+    def test_fallback_skips_duplicate_models(
+        self, mock_report, mock_decide, mock_openai, mock_anthropic
+    ):
+        """Fallback should skip duplicate models in the path list."""
+        # Decision returns gpt-4o, paths also has gpt-4o first
+        mock_decide.return_value = {"model_id": "gpt-4o", "trace_id": "test-trace"}
+        mock_openai.side_effect = Exception("OpenAI failed")
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "success"
+        mock_anthropic.return_value = mock_response
+
+        router = Router(
+            goal="test",
+            paths=["gpt-4o", "claude-3-sonnet"],
+            auto_register=False
+        )
+        response = router.completion(messages=[{"role": "user", "content": "test"}])
+
+        # OpenAI should only be called once (not twice for duplicate gpt-4o)
+        assert mock_openai.call_count == 1
+        mock_anthropic.assert_called_once()
