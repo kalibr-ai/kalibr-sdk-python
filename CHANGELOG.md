@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-02-02
+
+### Added
+
+- **In-request fallback for graceful degradation** ([#73](https://github.com/kalibr-ai/kalibr-sdk-python/pull/73))
+  - Router now tries remaining registered paths when primary path fails
+  - Eliminates user-visible errors during provider outages
+  - When OpenAI/Anthropic/Google experiences an outage, SDK automatically tries backup paths
+  - All failures still reported to intelligence service for Thompson Sampling learning
+  - Preserves intelligent routing - this is a defensive safety net on top of Thompson Sampling
+
 ### Fixed
 
 - **Critical: Memory Leak - HTTP Clients Created But Never Closed** ([#38](https://github.com/kalibr-ai/kalibr-sdk-python/issues/38))
