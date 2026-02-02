@@ -260,34 +260,80 @@ class Router:
             else:
                 router_span.set_attribute("kalibr.fallback", True)
 
-            # Step 5: Dispatch to provider
-            try:
-                response = self._dispatch(model_id, messages, tool_id, **{**params, **kwargs})
+            # Step 5: Build ordered candidate paths for fallback
+            # First: intelligence-selected path, then remaining registered paths
+            candidate_paths = []
+            selected_path = {"model": model_id, "tools": tool_id, "params": params}
+            candidate_paths.append(selected_path)
 
-                # Auto-report if success_when provided
-                if self.success_when and not self._outcome_reported:
+            # Add remaining paths, skipping duplicates of the selected model
+            for path in self._paths:
+                if path["model"] != model_id:
+                    candidate_paths.append(path)
+
+            # Step 6: Try each candidate path with fallback
+            from kalibr.intelligence import report_outcome
+
+            last_exception = None
+            for i, candidate in enumerate(candidate_paths):
+                candidate_model = candidate["model"]
+                candidate_tools = candidate.get("tools")
+                candidate_params = candidate.get("params") or {}
+
+                is_fallback = (i > 0)
+                if is_fallback:
+                    logger.warning(f"Primary path failed, trying fallback: {candidate_model}")
+
+                try:
+                    response = self._dispatch(
+                        candidate_model,
+                        messages,
+                        candidate_tools,
+                        **{**candidate_params, **kwargs}
+                    )
+
+                    # Success! Update state to reflect which model succeeded
+                    self._last_model_id = candidate_model
+
+                    # Auto-report success if success_when provided
+                    if self.success_when and not self._outcome_reported:
+                        try:
+                            output = response.choices[0].message.content or ""
+                            success = self.success_when(output)
+                            self.report(success=success)
+                        except Exception as e:
+                            logger.warning(f"Auto-outcome evaluation failed: {e}")
+
+                    # Add trace_id to response for explicit linkage
+                    response.kalibr_trace_id = trace_id
+                    return response
+
+                except Exception as e:
+                    last_exception = e
+
+                    # Log the failure with model name and error
+                    logger.warning(f"Model {candidate_model} failed: {type(e).__name__}: {e}")
+
+                    # Report failure for this path to enable Thompson Sampling learning
                     try:
-                        output = response.choices[0].message.content or ""
-                        success = self.success_when(output)
-                        self.report(success=success)
-                    except Exception as e:
-                        logger.warning(f"Auto-outcome evaluation failed: {e}")
-
-                # Add trace_id to response for explicit linkage
-                response.kalibr_trace_id = trace_id
-                return response
-
-            except Exception as e:
-                router_span.set_attribute("error", True)
-                router_span.set_attribute("error.type", type(e).__name__)
-
-                # Auto-report failure
-                if not self._outcome_reported:
-                    try:
-                        self.report(success=False, reason=f"provider_error: {type(e).__name__}")
-                    except:
+                        report_outcome(
+                            trace_id=trace_id,
+                            goal=self.goal,
+                            success=False,
+                            failure_reason=f"provider_error: {type(e).__name__}",
+                            model_id=candidate_model,
+                        )
+                    except Exception:
                         pass
-                raise
+
+                    # Continue to next candidate
+                    continue
+
+            # All paths failed - set error attributes and raise
+            router_span.set_attribute("error", True)
+            router_span.set_attribute("error.type", type(last_exception).__name__)
+            self._outcome_reported = True  # Prevent double-reporting on raise
+            raise last_exception
 
     def report(
         self,
