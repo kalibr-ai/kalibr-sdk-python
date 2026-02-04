@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kalibr"
-version = "1.4.0"
+version = "1.4.1"
 description = "Adaptive routing for AI agents. Learns which models work best and routes automatically."
 authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
 readme = "README.md"

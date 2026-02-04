@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-02-04
+
+### Fixed
+
+- Fixed tools parameter bug where None was passed to Anthropic/OpenAI APIs
+- Router now properly validates tools parameter before API calls
+
 ## [1.4.0] - 2026-02-02
 
 ### Added
