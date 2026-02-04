@@ -1,4 +1,4 @@
-"""Kalibr SDK v1.4.2 - LLM Observability & Tracing Framework
+"""Kalibr SDK v1.4.3 - LLM Observability & Tracing Framework
 
 Features:
 - **Auto-Instrumentation**: Zero-config tracing of OpenAI, Anthropic, Google SDK calls
@@ -36,7 +36,7 @@ CLI Usage:
     kalibr version                       # Show version
 """
 
-__version__ = "1.4.2"
+__version__ = "1.4.3"
 
 # Auto-instrument LLM SDKs on import (can be disabled via env var)
 import os

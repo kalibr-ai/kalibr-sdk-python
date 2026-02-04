@@ -422,8 +422,8 @@ class Router:
         client = OpenAI()
 
         call_kwargs = {"model": model, "messages": messages, **kwargs}
-        if tools is not None and tools:
-            call_kwargs["tools"] = tools
+        # Note: tools parameter from path config is for Kalibr routing only.
+        # Users can pass actual tool definitions via **kwargs if needed.
 
         return client.chat.completions.create(**call_kwargs)
 
@@ -448,8 +448,8 @@ class Router:
         call_kwargs = {"model": model, "messages": anthropic_messages, "max_tokens": kwargs.pop("max_tokens", 4096)}
         if system:
             call_kwargs["system"] = system
-        if tools is not None and tools:
-            call_kwargs["tools"] = tools
+        # Note: tools parameter from path config is for Kalibr routing only.
+        # Users can pass actual tool definitions via **kwargs if needed.
         call_kwargs.update(kwargs)
 
         response = client.messages.create(**call_kwargs)
