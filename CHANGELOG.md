@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-02-04
+
+### Fixed
+
+- Fixed version string in __init__.py (was showing 1.2.7 instead of 1.4.1)
+
 ## [1.4.1] - 2026-02-04
 
 ### Fixed
