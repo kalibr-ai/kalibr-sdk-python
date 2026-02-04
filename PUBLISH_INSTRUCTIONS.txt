@@ -1,0 +1,14 @@
+To publish to PyPI, run:
+
+cd kalibr-sdk-python
+twine upload dist/*
+
+When prompted:
+Username: __token__
+Password: (your PyPI token)
+
+After upload, verify:
+pip install --upgrade kalibr
+python -c 'import kalibr; print(kalibr.__version__)'
+
+Should print: 1.4.1
