@@ -1,10 +1,13 @@
 # Kalibr
 
-Adaptive routing for AI agents. Kalibr learns which models work best for your tasks and routes automatically.
-
+Execution path routing for AI agents. Kalibr learns which model+tool combinations work in YOUR production system and routes around failures automatically.
 [![PyPI](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
 [![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+**Unlike model routers** (NotDiamond, OpenRouter) that select which LLM to use, **Kalibr routes execution paths** - learning which combinations of models, tools, and parameters actually succeed in your specific production system.
+
+**Open source SDK.** Hosted routing intelligence.
 
 ## Requirements
 
@@ -46,8 +49,7 @@ response = router.completion(
 router.report(success=True)
 ```
 
-Kalibr picks the best model, makes the call, and learns from the outcome.
-
+Kalibr picks the best execution path, makes the call, and learns from the outcome.
 ## How It Works
 
 1. **You define paths** - models (and optionally tools/params) that can handle your task
