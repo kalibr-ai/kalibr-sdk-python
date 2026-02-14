@@ -1,6 +1,6 @@
 # Kalibr
 
-Execution path routing for AI agents. Kalibr learns which model+tool combinations work in YOUR production system and routes around failures automatically.
+Execution path routing for AI agents. Kalibr routes your agents around failing models, tools, and configurations — before users notice.
 [![PyPI](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
 [![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
