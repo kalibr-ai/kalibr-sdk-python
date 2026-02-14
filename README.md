@@ -1,6 +1,6 @@
 # Kalibr
 
-Execution path routing for AI agents. Kalibr routes your agents around failing models, tools, and configurations — before users notice.
+The first autonomous routing system for AI agents. Kalibr routes to the optimal execution path (model + tool + parameters) to prevent failures, degradations, and cost spikes before they impact users.
 [![PyPI](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
 [![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -52,10 +52,14 @@ router.report(success=True)
 Kalibr picks the best execution path, makes the call, and learns from the outcome.
 ## How It Works
 
-1. **You define paths** - models (and optionally tools/params) that can handle your task
-2. **Kalibr picks** - uses Thompson Sampling to balance exploration vs exploitation
-3. **You report outcomes** - tell Kalibr if it worked
-4. **Kalibr learns** - routes more traffic to what works
+Routing is outcome-aware. Kalibr captures step-level telemetry and success signals, canaries traffic across the paths you define, and keeps your agents on the best-performing path at all times.
+
+Observability shows you what went wrong. Kalibr prevents it from happening. It actively adapts to changing conditions as your agents run in production.
+
+1. **You define paths** — models (and optionally tools/params) that can handle your task
+2. **Kalibr picks** — uses Thompson Sampling to balance exploration vs exploitation
+3. **You report outcomes** — tell Kalibr if it worked
+4. **Kalibr learns** — routes more traffic to what works
 
 ## Paths
 
