@@ -52,7 +52,7 @@ class Router:
     Example:
         router = Router(
             goal="summarize",
-            paths=["gpt-4o", "claude-3-sonnet"],
+            paths=["gpt-4o", "claude-sonnet-4-20250514"],
             success_when=lambda out: len(out) > 100
         )
         response = router.completion(messages=[...])
@@ -61,7 +61,7 @@ class Router:
         # Simple auto-reporting
         router = Router(
             goal="extract_email",
-            paths=["gpt-4o", "claude-sonnet-4"],
+            paths=["gpt-4o", "claude-sonnet-4-20250514"],
             success_when=lambda out: "@" in out
         )
         response = router.completion(messages=[...])
@@ -70,7 +70,7 @@ class Router:
         # Manual reporting for complex validation
         router = Router(
             goal="book_meeting",
-            paths=["gpt-4o", "claude-sonnet-4"]
+            paths=["gpt-4o", "claude-sonnet-4-20250514"]
         )
         response = router.completion(messages=[...])
         # ... complex validation logic ...
@@ -96,7 +96,7 @@ class Router:
         Args:
             goal: Name of the goal (e.g., "book_meeting", "summarize")
             paths: List of models or path configs. Examples:
-                   ["gpt-4o", "claude-3-sonnet"]
+                   ["gpt-4o", "claude-sonnet-4-20250514"]
                    [{"model": "gpt-4o", "tools": ["search"]}]
                    [{"model": "gpt-4o", "params": {"temperature": 0.7}}]
             success_when: Optional function to auto-evaluate success from LLM output.
