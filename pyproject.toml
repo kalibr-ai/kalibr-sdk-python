@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kalibr"
 version = "1.4.3"
-description = "Execution path routing for AI agents. Routes around failing models, tools, and configurations automatically."
+description = "The first autonomous routing system for AI agents. Routes to the optimal execution path to prevent failures, degradations, and cost spikes before they impact users."
 authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
 readme = "README.md"
 requires-python = ">=3.10"
