@@ -30,7 +30,7 @@ def _provision_credentials(project_dir: str) -> None:
 
     try:
         resp = requests.post(
-            "https://kalibr-intelligence.fly.dev/api/provisioning/provision",
+            "https://kalibr-backend.fly.dev/api/provisioning/provision",
             json={
                 "provisioning_token": token,
                 "name": project_name,
