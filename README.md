@@ -1,19 +1,20 @@
-# Kalibr
+# Kalibr — Ship agents that fix themselves
 
-Ship agents that fix themselves.
+Your agent captures its own execution telemetry, reports whether it achieved
+the customer's goal, and Kalibr routes future calls to what actually works.
+When models degrade, Kalibr reroutes before users notice.
 
-[![PyPI](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
-[![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+**Install:** `pip install kalibr`
 
-Kalibr learns what's working as your agents run in production and routes them around failures, degradations, and cost spikes before you know they're happening. Define your execution paths (model + tools + params), tell Kalibr what success looks like, and it handles the rest.
+**Required env vars:**
+- `KALIBR_API_KEY` — get from dashboard.kalibr.systems/settings
+- `KALIBR_TENANT_ID` — get from dashboard.kalibr.systems/settings
 
-Observability shows you the problem. Kalibr fixes it.
-
-**Open source SDK. Hosted intelligence.**
+**Or use autonomous provisioning:**
+- `KALIBR_PROVISIONING_TOKEN` — create at dashboard.kalibr.systems/settings
+- Then run `kalibr init` — credentials provisioned automatically
 
 ## Quick Start
-
 ```python
 from kalibr import Router
 
@@ -24,12 +25,30 @@ router = Router(
 )
 
 response = router.completion(
-    messages=[{"role": "user", "content": "Extract the company: Hi, I'm Sarah from Stripe."}]
+    messages=[{"role": "user", "content": "Extract the company: Hi from Stripe."}]
 )
-# Kalibr picks the best path, makes the call, and learns from the outcome — automatically.
 ```
 
-Three lines to set up. Every call makes your agent smarter.
+## CLI
+```bash
+kalibr init      # scan codebase, wrap bare LLM calls with Router
+kalibr verify    # check credentials
+kalibr prompt    # copy Claude Code integration prompt to clipboard
+```
+
+**Links:** [Docs](https://kalibr.systems/docs) · [Dashboard](https://dashboard.kalibr.systems) · [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
+
+[![PyPI](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
+[![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+---
+
+Kalibr learns what's working as your agents run in production and routes them around failures, degradations, and cost spikes before you know they're happening. Define your execution paths (model + tools + params), tell Kalibr what success looks like, and it handles the rest.
+
+Observability shows you the problem. Kalibr fixes it.
+
+**Open source SDK. Hosted intelligence.**
 
 ## Installation
 
