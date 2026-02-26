@@ -3,10 +3,13 @@
 import typer
 from kalibr.cli.capsule_cmd import capsule
 from kalibr.cli.deploy_cmd import deploy
+from kalibr.cli.init_cmd import init
+from kalibr.cli.prompt_cmd import prompt
 from kalibr.cli.run import run
 
 # Import command functions
 from kalibr.cli.serve import serve
+from kalibr.cli.verify_cmd import verify
 from rich.console import Console
 
 app = typer.Typer(
@@ -22,6 +25,9 @@ app.command(name="serve")(serve)
 app.command(name="deploy")(deploy)
 app.command(name="capsule")(capsule)
 app.command(name="run")(run)
+app.command(name="init")(init)
+app.command(name="verify")(verify)
+app.command(name="prompt")(prompt)
 
 
 @app.command()
