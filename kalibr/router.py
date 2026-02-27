@@ -341,6 +341,7 @@ class Router:
         reason: Optional[str] = None,
         score: Optional[float] = None,
         trace_id: Optional[str] = None,
+        failure_category: Optional[str] = None,
     ):
         """
         Report outcome for the last completion.
@@ -350,10 +351,19 @@ class Router:
             reason: Optional failure reason
             score: Optional quality score (0.0-1.0)
             trace_id: Optional explicit trace ID (uses last completion's trace_id if not provided)
+            failure_category: Optional structured failure category for clustering
         """
         if self._outcome_reported:
             logger.warning("Outcome already reported for this completion. Each completion() requires a separate report() call.")
             return
+
+        if failure_category is not None:
+            from kalibr.intelligence import FAILURE_CATEGORIES
+            if failure_category not in FAILURE_CATEGORIES:
+                raise ValueError(
+                    f"Invalid failure_category '{failure_category}'. "
+                    f"Must be one of: {', '.join(FAILURE_CATEGORIES)}"
+                )
 
         from kalibr.intelligence import report_outcome
 
@@ -368,6 +378,7 @@ class Router:
                 success=success,
                 score=score,
                 failure_reason=reason,
+                failure_category=failure_category,
                 model_id=self._last_model_id,
             )
             self._outcome_reported = True
