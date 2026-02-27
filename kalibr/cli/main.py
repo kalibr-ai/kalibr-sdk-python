@@ -9,6 +9,7 @@ from kalibr.cli.run import run
 
 # Import command functions
 from kalibr.cli.serve import serve
+from kalibr.cli.signup_cmd import signup
 from kalibr.cli.verify_cmd import verify
 from rich.console import Console
 
@@ -27,6 +28,7 @@ app.command(name="capsule")(capsule)
 app.command(name="run")(run)
 app.command(name="init")(init)
 app.command(name="verify")(verify)
+app.command(name="signup")(signup)
 app.command(name="prompt")(prompt)
 
 
