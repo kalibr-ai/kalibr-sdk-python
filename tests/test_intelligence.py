@@ -170,6 +170,6 @@ class TestConvenienceFunctions:
         )
 
         mock_client.report_outcome.assert_called_once_with(
-            "trace-123", "test_goal", True
+            "trace-123", "test_goal", True, failure_category=None
         )
         assert result["status"] == "accepted"

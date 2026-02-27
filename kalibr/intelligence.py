@@ -41,6 +41,12 @@ import httpx
 # Default intelligence API endpoint
 DEFAULT_INTELLIGENCE_URL = "https://kalibr-intelligence.fly.dev"
 
+FAILURE_CATEGORIES = [
+    "timeout", "context_exceeded", "tool_error", "rate_limited",
+    "validation_failed", "hallucination_detected", "user_unsatisfied",
+    "empty_response", "malformed_output", "auth_error", "provider_error", "unknown"
+]
+
 
 class KalibrIntelligence:
     """Client for Kalibr Intelligence API.
@@ -151,6 +157,7 @@ class KalibrIntelligence:
         success: bool,
         score: float | None = None,
         failure_reason: str | None = None,
+        failure_category: str | None = None,
         metadata: dict | None = None,
         tool_id: str | None = None,
         execution_params: dict | None = None,
@@ -167,6 +174,11 @@ class KalibrIntelligence:
             success: Whether the goal was achieved
             score: Optional quality score (0-1) for more granular feedback
             failure_reason: Optional reason for failure (helps with debugging)
+            failure_category: Optional structured failure category for clustering.
+                Valid categories: timeout, context_exceeded, tool_error,
+                rate_limited, validation_failed, hallucination_detected,
+                user_unsatisfied, empty_response, malformed_output,
+                auth_error, provider_error, unknown
             metadata: Optional additional context as a dict
             tool_id: Optional tool that was used (e.g., "serper", "browserless")
             execution_params: Optional execution parameters (e.g., {"temperature": 0.3})
@@ -178,20 +190,28 @@ class KalibrIntelligence:
                 - goal: The goal recorded
 
         Raises:
+            ValueError: If failure_category is not a valid category
             httpx.HTTPStatusError: If the API returns an error
 
         Example:
             # Success case
             report_outcome(trace_id="abc123", goal="book_meeting", success=True)
 
-            # Failure case with reason
+            # Failure case with structured category
             report_outcome(
                 trace_id="abc123",
                 goal="book_meeting",
                 success=False,
-                failure_reason="calendar_conflict"
+                failure_reason="calendar_conflict",
+                failure_category="tool_error"
             )
         """
+        if failure_category is not None and failure_category not in FAILURE_CATEGORIES:
+            raise ValueError(
+                f"Invalid failure_category '{failure_category}'. "
+                f"Must be one of: {', '.join(FAILURE_CATEGORIES)}"
+            )
+
         response = self._request(
             "POST",
             "/api/v1/intelligence/report-outcome",
@@ -201,6 +221,7 @@ class KalibrIntelligence:
                 "success": success,
                 "score": score,
                 "failure_reason": failure_reason,
+                "failure_category": failure_category,
                 "metadata": metadata,
                 "tool_id": tool_id,
                 "execution_params": execution_params,
@@ -497,6 +518,107 @@ class KalibrIntelligence:
         )
         return response.json()
 
+    def update_outcome(
+        self,
+        trace_id: str,
+        goal: str,
+        success: bool | None = None,
+        score: float | None = None,
+        failure_reason: str | None = None,
+        failure_category: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict[str, Any]:
+        """Update an existing outcome with late-arriving signal.
+
+        Use when the real success signal arrives after the initial report.
+        For example, updating 48 hours later when a customer reopens a ticket.
+
+        Only fields that are explicitly passed (not None) will be updated.
+        Other fields retain their original values.
+
+        Args:
+            trace_id: The trace ID of the outcome to update
+            goal: The goal (must match the original outcome)
+            success: Updated success status (None to keep original)
+            score: Updated quality score 0-1 (None to keep original)
+            failure_reason: Updated failure reason (None to keep original)
+            failure_category: Updated failure category (None to keep original)
+            metadata: Additional metadata to merge with existing (None to keep original)
+
+        Returns:
+            dict with status, trace_id, goal, fields_updated
+
+        Raises:
+            ValueError: If failure_category is invalid
+            httpx.HTTPStatusError: If outcome not found (404) or API error
+
+        Example:
+            # Initial report
+            report_outcome(trace_id="abc", goal="resolve_ticket", success=True)
+
+            # 48 hours later, customer reopened ticket
+            update_outcome(trace_id="abc", goal="resolve_ticket", success=False,
+                          failure_reason="customer_reopened")
+        """
+        if failure_category is not None and failure_category not in FAILURE_CATEGORIES:
+            raise ValueError(
+                f"Invalid failure_category '{failure_category}'. "
+                f"Must be one of: {', '.join(FAILURE_CATEGORIES)}"
+            )
+
+        response = self._request(
+            "POST",
+            "/api/v1/intelligence/update-outcome",
+            json={
+                "trace_id": trace_id,
+                "goal": goal,
+                "success": success,
+                "score": score,
+                "failure_reason": failure_reason,
+                "failure_category": failure_category,
+                "metadata": metadata,
+            },
+        )
+        return response.json()
+
+    def get_insights(
+        self,
+        goal: str | None = None,
+        window_hours: int = 168,
+    ) -> dict[str, Any]:
+        """Get structured insights about what Kalibr has learned.
+
+        Returns machine-readable diagnostics per goal including health status,
+        failure mode breakdowns, path comparisons, param sensitivity, and
+        actionable signals for coding agents.
+
+        Args:
+            goal: Optional goal filter (returns all goals if None)
+            window_hours: Time window for analysis (default 1 week)
+
+        Returns:
+            dict with schema_version, tenant_id, generated_at, goals list, cross_goal_summary.
+            Each goal contains: status, success_rate, trend, top_failure_modes,
+            paths, param_sensitivity, and actionable_signals.
+
+            Signal types: path_underperforming, failure_mode_dominant,
+            param_sensitivity_detected, drift_detected, cost_inefficiency,
+            low_confidence, goal_healthy.
+
+        Example:
+            insights = intelligence.get_insights()
+            for goal in insights["goals"]:
+                if goal["status"] == "failing":
+                    for signal in goal["actionable_signals"]:
+                        print(f"  {signal['type']}: {signal['data']}")
+        """
+        params = {"window_hours": window_hours}
+        if goal:
+            params["goal"] = goal
+
+        response = self._request("GET", "/api/v1/intelligence/insights", params=params)
+        return response.json()
+
     def close(self):
         """Close the HTTP client."""
         self._client.close()
@@ -554,7 +676,10 @@ def get_policy(goal: str, tenant_id: str | None = None, **kwargs) -> dict[str, A
     return _get_intelligence_client().get_policy(goal, **kwargs)
 
 
-def report_outcome(trace_id: str, goal: str, success: bool, tenant_id: str | None = None, **kwargs) -> dict[str, Any]:
+def report_outcome(
+    trace_id: str, goal: str, success: bool, failure_category: str | None = None,
+    tenant_id: str | None = None, **kwargs,
+) -> dict[str, Any]:
     """Report execution outcome for a goal.
 
     Convenience function that uses the default intelligence client.
@@ -564,6 +689,7 @@ def report_outcome(trace_id: str, goal: str, success: bool, tenant_id: str | Non
         trace_id: The trace ID from the execution
         goal: The goal this execution was trying to achieve
         success: Whether the goal was achieved
+        failure_category: Optional structured failure category
         tenant_id: Optional tenant ID override (default: uses KALIBR_TENANT_ID env var)
         **kwargs: Additional arguments (score, failure_reason, metadata, tool_id, execution_params)
 
@@ -576,10 +702,9 @@ def report_outcome(trace_id: str, goal: str, success: bool, tenant_id: str | Non
         report_outcome(trace_id="abc123", goal="book_meeting", success=True)
     """
     if tenant_id:
-        # Use context manager to ensure client is properly closed
         with KalibrIntelligence(tenant_id=tenant_id) as client:
-            return client.report_outcome(trace_id, goal, success, **kwargs)
-    return _get_intelligence_client().report_outcome(trace_id, goal, success, **kwargs)
+            return client.report_outcome(trace_id, goal, success, failure_category=failure_category, **kwargs)
+    return _get_intelligence_client().report_outcome(trace_id, goal, success, failure_category=failure_category, **kwargs)
 
 
 def get_recommendation(task_type: str, **kwargs) -> dict[str, Any]:
@@ -660,3 +785,22 @@ def decide(
         with KalibrIntelligence(tenant_id=tenant_id) as client:
             return client.decide(goal, task_risk_level)
     return _get_intelligence_client().decide(goal, task_risk_level)
+
+
+def update_outcome(trace_id: str, goal: str, tenant_id: str | None = None, **kwargs) -> dict[str, Any]:
+    """Update an existing outcome with late-arriving signal.
+
+    Convenience function. See KalibrIntelligence.update_outcome for full docs.
+    """
+    if tenant_id:
+        with KalibrIntelligence(tenant_id=tenant_id) as client:
+            return client.update_outcome(trace_id, goal, **kwargs)
+    return _get_intelligence_client().update_outcome(trace_id, goal, **kwargs)
+
+
+def get_insights(goal: str | None = None, **kwargs) -> dict[str, Any]:
+    """Get structured insights about what Kalibr has learned.
+
+    Convenience function. See KalibrIntelligence.get_insights for full docs.
+    """
+    return _get_intelligence_client().get_insights(goal=goal, **kwargs)

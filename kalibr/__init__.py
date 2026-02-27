@@ -91,6 +91,9 @@ from .intelligence import (
     get_recommendation,
     register_path,
     decide,
+    update_outcome,
+    get_insights,
+    FAILURE_CATEGORIES,
 )
 from .router import Router
 
@@ -164,5 +167,8 @@ __all__ = [
     "get_recommendation",
     "register_path",
     "decide",
+    "update_outcome",
+    "get_insights",
+    "FAILURE_CATEGORIES",
     "Router",
 ]
