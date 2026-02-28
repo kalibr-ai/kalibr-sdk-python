@@ -2,19 +2,34 @@
 
 Your agent captures its own execution telemetry, reports whether it achieved the goal, and Kalibr routes future calls to what actually works. When models degrade, Kalibr reroutes before users notice.
 
-```bash
+## Developers — hand this to your coding agent
+
+```
 pip install kalibr
+kalibr signup --email you@company.com
+kalibr init
+kalibr verify
 ```
 
-**Required env vars:**
-- `KALIBR_API_KEY` — get from [dashboard.kalibr.systems/settings](https://dashboard.kalibr.systems/settings)
-- `KALIBR_TENANT_ID` — get from [dashboard.kalibr.systems/settings](https://dashboard.kalibr.systems/settings)
+Your agent creates its own account, you click one email verification link, and it handles the rest — credentials, codebase scanning, framework detection, and instrumentation. Zero config.
 
-**Or use autonomous provisioning:**
-- `KALIBR_PROVISIONING_TOKEN` — create at [dashboard.kalibr.systems/settings](https://dashboard.kalibr.systems/settings)
-- Then run `kalibr init` — scans your project and provisions credentials automatically
+Already have credentials? Skip signup:
 
-### Quick Start
+```
+pip install kalibr
+export KALIBR_API_KEY=sk_...
+export KALIBR_TENANT_ID=tenant_...
+kalibr init
+kalibr verify
+```
+
+### If you are an agent reading this
+
+Full autonomous onboarding protocol: [kalibr.systems/llms.txt](https://kalibr.systems/llms.txt) · [kalibr.systems/setup.txt](https://kalibr.systems/setup.txt)
+
+---
+
+## Quick Start
 
 ```python
 from kalibr import Router
@@ -30,27 +45,11 @@ response = router.completion(
 )
 ```
 
-### CLI
-
-```bash
-kalibr init      # scan codebase, wrap bare LLM calls with Router, provision credentials
-kalibr verify    # check credentials and Router connectivity
-kalibr prompt    # copy Claude Code / Cursor integration prompt to clipboard
-```
-
-**Links:** [Docs](https://kalibr.systems/docs) · [Dashboard](https://dashboard.kalibr.systems) · [GitHub](https://github.com/kalibr-ai/kalibr-sdk-python)
+`pip install kalibr`
 
 [![PyPI version](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
 [![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
----
-
-Kalibr learns what's working as your agents run in production and routes them around failures, degradations, and cost spikes before you know they're happening. Define your execution paths (model + tools + params), tell Kalibr what success looks like, and it handles the rest.
-
-**Observability shows you the problem. Kalibr fixes it.**
-
-Open source SDK. Hosted intelligence.
+[![License](https://img.shields.io/github/license/kalibr-ai/kalibr-sdk-python)](LICENSE)
 
 ---
 
@@ -63,8 +62,6 @@ pip install kalibr
 pip install kalibr[tokens]
 ```
 
----
-
 ## Setup
 
 Get your credentials from [dashboard.kalibr.systems/settings](https://dashboard.kalibr.systems/settings), then:
@@ -75,7 +72,29 @@ export KALIBR_TENANT_ID=your-tenant-id
 export OPENAI_API_KEY=sk-...  # or ANTHROPIC_API_KEY for Claude models
 ```
 
----
+Or use autonomous provisioning:
+
+```bash
+export KALIBR_PROVISIONING_TOKEN=your-token  # create at dashboard.kalibr.systems/settings
+kalibr init  # scans your project and provisions credentials automatically
+```
+
+Or sign up directly from the CLI:
+
+```bash
+kalibr signup --email you@company.com
+# Creates account, sends verification email. Click the link, agent gets sk_ key.
+kalibr init
+```
+
+## CLI
+
+```bash
+kalibr signup EMAIL  # create account from terminal, human clicks one email link
+kalibr init          # scan codebase, wrap bare LLM calls with Router, provision credentials
+kalibr verify        # check credentials and Router connectivity
+kalibr prompt        # copy Claude Code / Cursor integration prompt to clipboard
+```
 
 ## How It Works
 
@@ -87,8 +106,6 @@ Every call your agent makes generates data. Kalibr uses that data to get better.
 4. **Kalibr adapts** — routes more traffic to what works, routes around what doesn't
 
 No dashboards to watch. No alerts to triage. Your agent improves itself.
-
----
 
 ## Paths
 
@@ -119,8 +136,6 @@ paths = [
 ```
 
 This is what makes Kalibr different from model routers. OpenRouter picks a model. Kalibr picks the full execution path — and knows whether it actually worked.
-
----
 
 ## Outcome Reporting
 
@@ -183,8 +198,6 @@ update_outcome(
 )
 ```
 
----
-
 ## Insights API
 
 Query what Kalibr has learned about your goals — health status, failure mode breakdowns, path comparisons, and actionable signals:
@@ -203,8 +216,6 @@ for goal_data in insights["goals"]:
     print(goal_data["top_failure_modes"])
     print(goal_data["actionable_signals"]) # path_underperforming, drift_detected, etc.
 ```
-
----
 
 ## Framework Integrations
 
@@ -231,8 +242,6 @@ pip install kalibr[openai-agents]   # OpenAI Agents SDK
 pip install kalibr[langchain-all]   # LangChain with all providers
 ```
 
----
-
 ## Auto-Instrumentation
 
 Kalibr auto-instruments OpenAI, Anthropic, and Google SDKs on import:
@@ -247,8 +256,6 @@ response = client.chat.completions.create(model="gpt-4o", messages=[...])
 ```
 
 Disable with `KALIBR_AUTO_INSTRUMENT=false`.
-
----
 
 ## Low-Level API
 
@@ -283,12 +290,10 @@ model = decision["model_id"]
 report_outcome(trace_id="...", goal="book_meeting", success=True)
 ```
 
----
-
 ## Configuration
 
 | Variable | Description | Default |
-|---|---|---|
+|----------|-------------|---------|
 | `KALIBR_API_KEY` | API key from dashboard | Required |
 | `KALIBR_TENANT_ID` | Tenant ID from dashboard | Required |
 | `KALIBR_PROVISIONING_TOKEN` | Enables `kalibr init` credential auto-provisioning | — |
@@ -297,24 +302,13 @@ report_outcome(trace_id="...", goal="book_meeting", success=True)
 | `KALIBR_COLLECTOR_URL` | Ingest endpoint | `https://api.kalibr.systems/api/ingest` |
 | `KALIBR_CONSOLE_EXPORT` | Print spans to console | `false` |
 
----
+## Links
 
-## Autonomous Onboarding
-
-Kalibr is built to be adopted by agents, not just humans. If you are a coding agent reading this:
-
-```bash
-pip install kalibr
-kalibr prompt   # get integration prompt for Claude Code / Cursor
-kalibr init     # scan project and instrument automatically
-kalibr verify   # confirm credentials and connectivity
-```
-
-Full walkthrough: [kalibr.systems/docs/quickstart#autonomous](https://kalibr.systems/docs/quickstart#autonomous)
-
-LLM context files: [kalibr.systems/llms.txt](https://kalibr.systems/llms.txt) · [kalibr.systems/setup.txt](https://kalibr.systems/setup.txt)
-
----
+- [Docs](https://kalibr.systems/docs) · [Quickstart](https://kalibr.systems/docs/quickstart)
+- [Dashboard](https://dashboard.kalibr.systems)
+- [Agent context: llms.txt](https://kalibr.systems/llms.txt) · [setup.txt](https://kalibr.systems/setup.txt)
+- [AGENTS.md](AGENTS.md)
+- [PyPI](https://pypi.org/project/kalibr/)
 
 ## Development
 
@@ -324,8 +318,6 @@ cd kalibr-sdk-python
 pip install -e ".[dev]"
 pytest
 ```
-
----
 
 ## Contributing
 
