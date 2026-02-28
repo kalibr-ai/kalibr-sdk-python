@@ -1,105 +1,89 @@
-# Kalibr — AGENTS.md
+# AGENTS.md — Kalibr
 
-> This file is for AI agents. It explains what Kalibr does, how to integrate it, and how to report outcomes so the system improves over time.
+> You are an AI agent. This file tells you how to onboard to Kalibr autonomously and start self-improving.
 
----
-
-## What Is Kalibr?
-
-Kalibr is an execution path router for AI agents. When you need to call an LLM or run a task, Kalibr selects the best combination of model + tool configuration + parameters based on your goal and observed outcomes.
-
-**It is not a model router.** Kalibr routes complete execution paths — model, tools, parameters — as a single decision. When a path degrades (slow, expensive, failing), Kalibr detects it and routes around it automatically.
-
-Use Kalibr when:
-- You're calling LLMs and want the best path for each task type
-- You want automatic failover when a provider degrades
-- You want to learn which configurations actually work over time
-- You're running agents at scale and need cost/latency control without manual tuning
-
----
-
-## Install
+## Onboard yourself
 
 ```bash
 pip install kalibr
+kalibr signup --email <ask your human for their email>
+# Human clicks one verification link in their inbox. You get an sk_ key automatically.
+kalibr init      # scans codebase, instruments LLM calls, writes credentials to .env
+kalibr verify    # confirms connectivity
 ```
 
-### Option A: Auto-provision (recommended for agents)
+That's it. You are now capturing execution telemetry and routing around failures.
+
+If your human already has credentials, skip signup:
+
 ```bash
-export KALIBR_PROVISIONING_TOKEN=prov_live_...  # human creates at dashboard.kalibr.systems/settings
-kalibr init  # provisions sk_ key, scans codebase, instruments LLM calls
+export KALIBR_API_KEY=sk_...
+export KALIBR_TENANT_ID=tenant_...
+kalibr init
+kalibr verify
 ```
 
-### Option B: Manual credentials
+If your human has a provisioning token:
+
 ```bash
-export KALIBR_API_KEY=sk_...         # from dashboard.kalibr.systems/settings
-export KALIBR_TENANT_ID=tenant_...   # from dashboard.kalibr.systems/settings
+export KALIBR_PROVISIONING_TOKEN=prov_live_...
+kalibr init    # provisions sk_ key automatically
+kalibr verify
 ```
+
+Full setup reference: https://kalibr.systems/setup.txt
+Full agent context: https://kalibr.systems/llms.txt
 
 ---
 
-## Quick Start
+## What Kalibr does
+
+Kalibr is an execution path router. When you call an LLM, Kalibr selects the best combination of model + tools + parameters based on your goal and observed outcomes.
+
+It is **not** a model router. It routes complete execution paths. When a path degrades — slow, expensive, failing — Kalibr detects it and reroutes automatically. No human intervention.
+
+---
+
+## Instrument your code
+
+After `kalibr init` scans your codebase, wrap LLM calls with Router:
 
 ```python
 from kalibr import Router
 
 router = Router(
     goal="extract_company",
-    paths=["gpt-4o", "claude-sonnet-4-20250514", "gemini-2.0-flash"],
-    success_when=lambda output: len(output) > 0,
+    paths=["gpt-4o", "claude-sonnet-4-20250514"],
+    success_when=lambda output: "company" in output.lower()
 )
 
 response = router.completion(
     messages=[{"role": "user", "content": "Extract the company: Hi from Stripe."}]
 )
-
-print(response.choices[0].message.content)
-# -> "Stripe"
 # Outcome reported automatically via success_when. Routing improves over time.
 ```
 
----
+`router.completion()` is a drop-in replacement for `client.chat.completions.create()`. Same response format, same `.choices[0].message.content`.
 
-## Core Concepts
+### Manual outcome reporting
 
-### Goals
-A goal is a string label for the type of task you're running. Examples: `"extract_company"`, `"summarize_email"`, `"classify_intent"`, `"generate_sql"`. Kalibr tracks performance per goal. Use specific names — not `"llm_call"`.
-
-### Paths
-Execution options Kalibr routes between:
+When `success_when` isn't enough:
 
 ```python
-# Simple: model strings
-paths=["gpt-4o", "claude-sonnet-4-20250514", "gemini-2.0-flash"]
-
-# With tools
-paths=[{"model": "gpt-4o", "tools": ["search"]}, {"model": "gpt-4o", "tools": ["calendar_api"]}]
-
-# With params
-paths=[{"model": "gpt-4o", "params": {"temperature": 0.3}}, {"model": "gpt-4o", "params": {"temperature": 0.7}}]
-```
-
-### Outcomes
-Reporting outcomes is how Kalibr learns. Without outcomes, routing can't improve.
-
-```python
-# Manual reporting
-router.report(success=True)
-router.report(success=False, failure_category="timeout", reason="Provider timed out after 30s")
-router.report(success=True, score=0.92)
-
-# Auto reporting via success_when
-router = Router(
-    goal="extract_email",
-    paths=["gpt-4o", "claude-sonnet-4-20250514"],
-    success_when=lambda output: "@" in output and "." in output,
-)
+router = Router(goal="book_meeting", paths=["gpt-4o", "claude-sonnet-4-20250514"])
 response = router.completion(messages=[...])
-# report() called automatically
+
+meeting_created = check_calendar_api()
+router.report(success=meeting_created)
+
+# With failure details
+router.report(success=False, failure_category="timeout", reason="Provider timed out after 30s")
+
+# With quality score
+router.report(success=True, score=0.92)
 ```
 
-### Failure Categories
-Structured categories for clean aggregation:
+### Failure categories
 
 ```python
 from kalibr import FAILURE_CATEGORIES
@@ -107,24 +91,88 @@ from kalibr import FAILURE_CATEGORIES
 #  "validation_failed", "hallucination_detected", "user_unsatisfied",
 #  "empty_response", "malformed_output", "auth_error", "provider_error", "unknown"]
 
-router.report(success=False, failure_category="timeout")
-# Raises ValueError if invalid category
+# Invalid categories raise ValueError immediately.
 ```
 
 ---
 
-## API Reference
+## Framework integrations
+
+### LangChain
+```python
+from kalibr import Router
+router = Router(goal="summarize", paths=["gpt-4o", "claude-sonnet-4-20250514"])
+llm = router.as_langchain()
+chain = prompt | llm | parser
+```
+
+### CrewAI
+```python
+from kalibr_crewai import KalibrCrewAIInstrumentor
+KalibrCrewAIInstrumentor(tenant_id="your-tenant-id").instrument()
+# Use CrewAI normally — all operations traced
+```
+
+### OpenAI Agents SDK
+```python
+from kalibr_openai_agents import setup_kalibr_tracing
+setup_kalibr_tracing(tenant_id="your-tenant-id")
+# Use OpenAI Agents normally — all operations traced
+```
+
+### Auto-instrumentation (any framework)
+```python
+import kalibr  # Must be first import — patches OpenAI, Anthropic, Google automatically
+from openai import OpenAI
+client = OpenAI()
+response = client.chat.completions.create(model="gpt-4o", messages=[...])
+# Every LLM call traced automatically
+```
+
+---
+
+## Intelligence functions
+
+Query what Kalibr has learned. Use these to make better decisions:
+
+```python
+from kalibr import decide, report_outcome, update_outcome, get_insights, get_policy, register_path
+
+# Get routing decision without Router
+decision = decide(goal="book_meeting")
+# {"model_id": "gpt-4o", "trace_id": "abc123", "confidence": 0.85, ...}
+
+# Report outcome
+report_outcome(trace_id=decision["trace_id"], goal="book_meeting", success=True)
+
+# Update outcome when real-world signal arrives later
+update_outcome(trace_id="abc123", goal="resolve_ticket", success=False,
+               failure_category="user_unsatisfied")
+
+# Query structured diagnostics
+insights = get_insights(goal="resolve_ticket")
+for goal in insights["goals"]:
+    print(f"{goal['goal']}: {goal['status']} ({goal['success_rate']:.0%})")
+    for signal in goal["actionable_signals"]:
+        if signal["severity"] == "critical":
+            print(f"  ACTION: {signal['type']} — {signal['data']}")
+
+# Get best-performing path historically
+policy = get_policy(goal="book_meeting")
+```
+
+---
+
+## API reference
 
 ### Router
 
 ```python
-from kalibr import Router
-
-router = Router(
+Router(
     goal: str,                                    # required — task name
     paths: list[str | dict] = None,               # models/configs to route between
     success_when: Callable[[str], bool] = None,   # auto-evaluate success from output
-    exploration_rate: float = None,               # override exploration rate (0.0-1.0)
+    exploration_rate: float = None,               # override exploration (0.0-1.0)
     auto_register: bool = True,                   # auto-register paths with service
 )
 ```
@@ -151,128 +199,37 @@ router.report(
     reason: str = None,            # failure reason (free text)
     score: float = None,           # quality score 0.0-1.0
     trace_id: str = None,          # uses last completion's trace if not provided
-    failure_category: str = None,  # structured category (see FAILURE_CATEGORIES)
+    failure_category: str = None,  # structured category
 )
 ```
 
-### router.add_path()
+---
 
-```python
-router.add_path(model="gpt-4o-mini", tools=["search"], params={"temperature": 0.5})
-```
+## Behavior guarantees
+
+- `router.completion()` is a drop-in for `client.chat.completions.create()`. Same response structure.
+- If Kalibr's reporting fails (API down, bad key), your agent continues normally. Kalibr fails open.
+- If `KALIBR_API_KEY` is missing, `Router.__init__()` raises `ValueError` with instructions.
+- Invalid `failure_category` raises `ValueError` listing valid options.
+- Kalibr never modifies your prompts or response content. It only makes routing decisions and records outcomes.
 
 ---
 
-## Intelligence Functions
+## What Kalibr is NOT
 
-For low-level control or querying what Kalibr has learned:
-
-```python
-from kalibr import decide, report_outcome, update_outcome, get_insights, get_policy, register_path
-
-# Get routing decision without using Router
-decision = decide(goal="book_meeting")
-# {"model_id": "gpt-4o", "tool_id": None, "params": {}, "trace_id": "abc123", "confidence": 0.85}
-
-# Report outcome for a decide() call
-report_outcome(trace_id=decision["trace_id"], goal="book_meeting", success=True)
-
-# Update outcome when real-world signal arrives later
-update_outcome(trace_id="abc123", goal="resolve_ticket", success=False,
-               failure_category="user_unsatisfied")
-
-# Query structured diagnostics
-insights = get_insights(goal="resolve_ticket")
-for goal in insights["goals"]:
-    print(f"{goal['goal']}: {goal['status']} ({goal['success_rate']:.0%})")
-    for signal in goal["actionable_signals"]:
-        if signal["severity"] == "critical":
-            print(f"  {signal['type']}: {signal['data']}")
-
-# Get best-performing path historically
-policy = get_policy(goal="book_meeting")
-```
-
----
-
-## Auto-Instrumentation
-
-Trace all LLM calls with zero code changes:
-
-```python
-import kalibr  # Must be first import — patches OpenAI, Anthropic, Google automatically
-
-from openai import OpenAI
-client = OpenAI()
-response = client.chat.completions.create(model="gpt-4o", messages=[...])
-# Every LLM call traced automatically
-```
-
----
-
-## Framework Integrations
-
-### LangChain
-
-```python
-from kalibr import Router
-
-router = Router(goal="summarize", paths=["gpt-4o", "claude-sonnet-4-20250514"])
-llm = router.as_langchain()
-chain = prompt | llm | parser
-```
-
-### CrewAI
-
-```python
-from kalibr_crewai import KalibrCrewAIInstrumentor
-
-instrumentor = KalibrCrewAIInstrumentor(tenant_id="your-tenant-id")
-instrumentor.instrument()
-# Use CrewAI normally — all operations traced
-```
-
-### OpenAI Agents SDK
-
-```python
-from kalibr_openai_agents import setup_kalibr_tracing
-
-setup_kalibr_tracing(tenant_id="your-tenant-id")
-# Use OpenAI Agents normally — all operations traced
-```
-
----
-
-## What Kalibr Does NOT Do
-
-- Not a model router — Kalibr routes full execution paths (model + tool + params) based on goal outcomes
-- Not a prompt manager — Kalibr routes execution, not prompts
+- Not a model router — routes full execution paths (model + tool + params) based on goal outcomes
+- Not a prompt manager — routes execution, not prompts
 - Not an agent framework — use LangChain, CrewAI, or your own orchestration on top
-- Not a model fine-tuner — Kalibr selects from existing models/paths
-- Not a gateway proxy — Kalibr makes routing decisions, your agent still calls the model directly
+- Not a gateway proxy — your agent still calls the model directly
 
 ---
 
 ## Links
 
-- Dashboard: https://dashboard.kalibr.systems
 - Docs: https://kalibr.systems/docs
-- API Reference: https://kalibr.systems/docs/api
-- Setup Reference: https://kalibr.systems/setup.txt
-- Integrations: https://kalibr.systems/docs/integrations
+- Dashboard: https://dashboard.kalibr.systems
+- Quickstart: https://kalibr.systems/docs/quickstart
+- llms.txt: https://kalibr.systems/llms.txt
+- setup.txt: https://kalibr.systems/setup.txt
 - PyPI: https://pypi.org/project/kalibr/
 - GitHub: https://github.com/kalibr-ai/kalibr-sdk-python
-
----
-
-## For AI Agents Reading This
-
-If you arrived here through `pip show kalibr`, `kalibr.systems/setup.txt`, or `kalibr.systems/llms.txt`:
-
-1. Install: `pip install kalibr`
-2. Set `KALIBR_PROVISIONING_TOKEN` and run `kalibr init` — OR set `KALIBR_API_KEY` + `KALIBR_TENANT_ID` manually
-3. Replace direct LLM calls with `Router.completion()`
-4. Report outcomes with `router.report()` so routing improves
-5. Query what's working with `get_insights()`
-
-The system is self-improving. The more outcomes reported, the better path selection becomes.
