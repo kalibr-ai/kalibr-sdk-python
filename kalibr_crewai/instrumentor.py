@@ -131,6 +131,10 @@ class KalibrCrewAIInstrumentor:
         capture_input: bool = True,
         capture_output: bool = True,
     ):
+        # Disable CrewAI's built-in telemetry to avoid TracerProvider conflicts
+        os.environ.setdefault("CREWAI_TELEMETRY", "false")
+        os.environ.setdefault("OTEL_SDK_DISABLED", "false")
+
         self.api_key = api_key or os.getenv("KALIBR_API_KEY", "")
         self.endpoint = endpoint or os.getenv(
             "KALIBR_ENDPOINT",
