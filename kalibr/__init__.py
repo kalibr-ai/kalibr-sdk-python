@@ -95,7 +95,7 @@ from .intelligence import (
     get_insights,
     FAILURE_CATEGORIES,
 )
-from .router import Router
+from .router import KalibrResponse, Router
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
     # Setup OpenTelemetry collector
@@ -170,5 +170,6 @@ __all__ = [
     "update_outcome",
     "get_insights",
     "FAILURE_CATEGORIES",
+    "KalibrResponse",
     "Router",
 ]

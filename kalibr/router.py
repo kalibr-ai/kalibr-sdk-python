@@ -45,6 +45,28 @@ def _create_context_with_trace_id(trace_id_hex: str) -> Optional[Context]:
         return None
 
 
+class KalibrResponse:
+    """Thin wrapper adding convenience properties to ChatCompletion."""
+
+    def __init__(self, response):
+        self._response = response
+
+    @property
+    def content(self):
+        """Shortcut for response.choices[0].message.content"""
+        return self._response.choices[0].message.content
+
+    @property
+    def model(self):
+        return self._response.model
+
+    def __getattr__(self, name):
+        return getattr(self._response, name)
+
+    def __repr__(self):
+        return repr(self._response)
+
+
 class Router:
     """
     Routes LLM requests to the best model based on learned outcomes.
@@ -306,7 +328,7 @@ class Router:
 
                     # Add trace_id to response for explicit linkage
                     response.kalibr_trace_id = trace_id
-                    return response
+                    return KalibrResponse(response)
 
                 except Exception as e:
                     last_exception = e
