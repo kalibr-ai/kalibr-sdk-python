@@ -12,6 +12,10 @@ Prerequisites:
 import os
 from kalibr_crewai import KalibrCrewAIInstrumentor
 
+# Note: KalibrCrewAIInstrumentor automatically disables CrewAI's built-in
+# telemetry (CREWAI_TELEMETRY=false) to avoid OpenTelemetry TracerProvider
+# conflicts. Kalibr handles all OTEL setup so both systems work together.
+
 # Instrument BEFORE importing CrewAI classes
 instrumentor = KalibrCrewAIInstrumentor(
     tenant_id="demo-tenant",

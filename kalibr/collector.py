@@ -22,6 +22,7 @@ from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
 from opentelemetry.sdk.trace.export import (
     BatchSpanProcessor,
     ConsoleSpanExporter,
@@ -274,11 +275,22 @@ def setup_collector(
         if _is_configured and _tracer_provider:
             return _tracer_provider
 
-        # Create resource with service name
-        resource = Resource(attributes={SERVICE_NAME: service_name})
+        # Check if an SDK TracerProvider already exists (e.g. set by CrewAI
+        # or another framework). If so, add our exporters to it instead of
+        # creating a new one, which would trigger
+        # "Overriding of current TracerProvider is not allowed".
+        existing = trace.get_tracer_provider()
+        # The proxy provider wraps the real one; unwrap if needed.
+        real_provider = getattr(existing, "_real_provider", existing)
+        reuse_existing = isinstance(real_provider, SDKTracerProvider)
 
-        # Create tracer provider
-        provider = TracerProvider(resource=resource)
+        if reuse_existing:
+            provider = real_provider
+        else:
+            # Create resource with service name
+            resource = Resource(attributes={SERVICE_NAME: service_name})
+            # Create tracer provider
+            provider = TracerProvider(resource=resource)
 
         # Add OTLP exporter if endpoint is configured
         otlp_endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -318,8 +330,9 @@ def setup_collector(
             except Exception as e:
                 print(f"⚠️  Failed to configure console exporter: {e}")
 
-        # Set as global tracer provider
-        trace.set_tracer_provider(provider)
+        # Only set the global tracer provider if we created a new one
+        if not reuse_existing:
+            trace.set_tracer_provider(provider)
 
         _tracer_provider = provider
         _is_configured = True

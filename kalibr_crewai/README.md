@@ -155,6 +155,18 @@ Events follow Kalibr's v1.0 schema:
 }
 ```
 
+## Telemetry Conflict Handling
+
+Kalibr automatically disables CrewAI's built-in telemetry by setting
+`CREWAI_TELEMETRY=false` and `OTEL_SDK_DISABLED=false` (via `os.environ.setdefault`)
+when `KalibrCrewAIInstrumentor` is instantiated. This prevents the
+"Overriding of current TracerProvider is not allowed" error that occurs when both
+Kalibr and CrewAI try to set their own OpenTelemetry TracerProvider.
+
+If a TracerProvider has already been configured (by any framework), Kalibr's
+`setup_collector()` will add its exporters to the existing provider rather than
+creating a new one. No manual configuration is needed.
+
 ## Best Practices
 
 1. **Use auto-instrumentation** for simplicity - it captures all operations
