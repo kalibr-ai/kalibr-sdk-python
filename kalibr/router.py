@@ -335,6 +335,9 @@ class Router:
             self._outcome_reported = True  # Prevent double-reporting on raise
             raise last_exception
 
+    # Alias for common naming confusion
+    complete = completion
+
     def report(
         self,
         success: bool,
@@ -546,6 +549,20 @@ class Router:
                 total_tokens=getattr(response, "usage_metadata", {}).get("total_token_count", 0),
             ),
         )
+
+    def __getattr__(self, name):
+        suggestions = {
+            "predict": "completion",
+            "generate": "completion",
+            "chat": "completion",
+            "invoke": "completion",
+            "run": "completion",
+        }
+        if name in suggestions:
+            raise AttributeError(
+                f"Router has no method '{name}'. Did you mean '{suggestions[name]}()'?"
+            )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def as_langchain(self):
         """Return a LangChain-compatible chat model."""
