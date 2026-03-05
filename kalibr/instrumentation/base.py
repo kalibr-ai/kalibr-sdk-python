@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
-from kalibr.pricing import get_pricing
+from kalibr.pricing import get_pricing, get_voice_pricing
 
 
 class BaseInstrumentation(ABC):
@@ -123,4 +123,35 @@ class BaseCostAdapter(ABC):
         """
         vendor = self.get_vendor_name()
         pricing, _ = get_pricing(vendor, model)
+        return pricing
+
+
+class BaseVoiceCostAdapter(ABC):
+    """Base class for voice cost calculation adapters used by instrumentation modules.
+
+    Uses centralized voice pricing from kalibr.pricing module.
+    """
+
+    @abstractmethod
+    def calculate_cost(self, model: str, usage: Dict[str, Any]) -> float:
+        """Calculate cost in USD for a voice API call.
+
+        Args:
+            model: Model identifier
+            usage: Usage dictionary with 'characters' and/or 'audio_duration_minutes'
+
+        Returns:
+            Cost in USD (rounded to 6 decimal places)
+        """
+        pass
+
+    @abstractmethod
+    def get_vendor_name(self) -> str:
+        """Get the vendor name for this adapter."""
+        pass
+
+    def get_voice_pricing_for_model(self, model: str) -> Dict[str, Any]:
+        """Get voice pricing for a specific model."""
+        vendor = self.get_vendor_name()
+        pricing, _ = get_voice_pricing(vendor, model)
         return pricing

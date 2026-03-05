@@ -70,8 +70,12 @@ from .context import (
 from .cost_adapter import (
     AnthropicCostAdapter,
     BaseCostAdapter,
+    BaseVoiceCostAdapter,
     CostAdapterFactory,
+    DeepgramCostAdapter,
+    ElevenLabsCostAdapter,
     OpenAICostAdapter,
+    OpenAIVoiceCostAdapter,
 )
 from .instrumentation import auto_instrument, get_instrumented_providers
 
@@ -143,6 +147,11 @@ __all__ = [
     "OpenAICostAdapter",
     "AnthropicCostAdapter",
     "CostAdapterFactory",
+    # Voice Cost Adapters
+    "BaseVoiceCostAdapter",
+    "ElevenLabsCostAdapter",
+    "OpenAIVoiceCostAdapter",
+    "DeepgramCostAdapter",
     # Models
     "TraceConfig",
     "EventData",

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-03-05
+
+### Added
+
+- **Voice AI Support** — trace, cost-track, and route voice operations (TTS/STT)
+  - Voice pricing infrastructure: `VOICE_PRICING` dict with per-character (TTS) and per-minute (STT) pricing for ElevenLabs, OpenAI (tts-1, tts-1-hd, whisper-1), and Deepgram (nova-2, aura-*)
+  - `get_voice_pricing()`, `compute_voice_cost()`, `normalize_voice_model_name()` in `kalibr.pricing`
+  - Voice cost adapters: `BaseVoiceCostAdapter`, `ElevenLabsCostAdapter`, `OpenAIVoiceCostAdapter`, `DeepgramCostAdapter` in `kalibr.cost_adapter`
+  - `CostAdapterFactory.compute_voice_cost()`, `register_voice_adapter()`, `get_voice_adapter()`
+- **Voice SDK Auto-Instrumentation**
+  - ElevenLabs: patches `ElevenLabs.generate()` (sync/async) with OTel spans and cost tracking
+  - Deepgram: patches `ListenRESTClient.transcribe_file/transcribe_url` (sync/async) with OTel spans
+  - OpenAI Audio: patches `Speech.create` (TTS) and `Transcriptions.create` (STT), sync + async
+  - `auto_instrument(["elevenlabs", "deepgram"])` — opt-in, not in default list
+- **Router Voice Methods**
+  - `router.synthesize(text, voice=..., model=...)` — TTS routing with cost tracking
+  - `router.transcribe(audio, language=..., model=...)` — STT routing with cost tracking
+  - Auto-detects vendor from model prefix: `tts-*`/`whisper-*` → OpenAI, `eleven_*` → ElevenLabs, `nova-*`/`aura-*` → Deepgram
+- **Voice Agent Framework Package** (`kalibr_voice`)
+  - `KalibrLiveKitInstrumentor` — wraps LiveKit Agent pipeline stages (STT → LLM → TTS)
+  - `KalibrPipecatInstrumentor` — wraps Pipecat pipeline processors
+- **Collector** now detects `voice.operation` span attribute and exports voice metadata (character count, audio duration, voice ID) in schema v1.0 compatible `metadata` dict
+- Optional dependencies: `kalibr[elevenlabs]`, `kalibr[deepgram]`, `kalibr[voice]`, `kalibr[livekit]`, `kalibr[pipecat]`
+- 86 new tests across 4 test files
+
 ## [1.4.2] - 2026-02-04
 
 ### Fixed

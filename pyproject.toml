@@ -69,6 +69,23 @@ langchain-all = [
     "langchain-anthropic>=0.1.0",
     "langchain-google-genai>=0.0.10",
 ]
+# Voice AI integrations
+elevenlabs = [
+    "elevenlabs>=1.0.0",
+]
+deepgram = [
+    "deepgram-sdk>=3.0.0",
+]
+voice = [
+    "elevenlabs>=1.0.0",
+    "deepgram-sdk>=3.0.0",
+]
+livekit = [
+    "livekit-agents>=0.8.0",
+]
+pipecat = [
+    "pipecat-ai>=0.0.30",
+]
 # CrewAI integration
 crewai = [
     "crewai>=0.28.0",
@@ -102,7 +119,7 @@ Issues = "https://github.com/kalibr-ai/kalibr-sdk-python/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*", "kalibr_openai_agents*"]
+include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*", "kalibr_openai_agents*", "kalibr_voice*"]
 exclude = ["tests*", "examples*"]
 
 [tool.black]

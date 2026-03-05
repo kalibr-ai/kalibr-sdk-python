@@ -79,8 +79,28 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
                         _instrumented_providers.add(provider_lower)
                     print(f"✅ Instrumented Google Generative AI SDK")
 
+            elif provider_lower == "elevenlabs":
+                from . import elevenlabs_instr
+
+                success = elevenlabs_instr.instrument()
+                results[provider_lower] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.add(provider_lower)
+                    print(f"\u2705 Instrumented ElevenLabs SDK")
+
+            elif provider_lower == "deepgram":
+                from . import deepgram_instr
+
+                success = deepgram_instr.instrument()
+                results[provider_lower] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.add(provider_lower)
+                    print(f"\u2705 Instrumented Deepgram SDK")
+
             else:
-                print(f"⚠️  Unknown provider: {provider}")
+                print(f"\u26a0\ufe0f  Unknown provider: {provider}")
                 results[provider_lower] = False
 
         except ImportError as e:
@@ -140,7 +160,27 @@ def uninstrument_all() -> Dict[str, bool]:
                 if success:
                     with _registry_lock:
                         _instrumented_providers.discard(provider)
-                    print(f"✅ Uninstrumented Google Generative AI SDK")
+                    print(f"\u2705 Uninstrumented Google Generative AI SDK")
+
+            elif provider == "elevenlabs":
+                from . import elevenlabs_instr
+
+                success = elevenlabs_instr.uninstrument()
+                results[provider] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.discard(provider)
+                    print(f"\u2705 Uninstrumented ElevenLabs SDK")
+
+            elif provider == "deepgram":
+                from . import deepgram_instr
+
+                success = deepgram_instr.uninstrument()
+                results[provider] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.discard(provider)
+                    print(f"\u2705 Uninstrumented Deepgram SDK")
 
         except Exception as e:
             print(f"❌ Failed to uninstrument {provider}: {e}")
