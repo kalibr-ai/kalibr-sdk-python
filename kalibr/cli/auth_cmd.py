@@ -1,7 +1,9 @@
-"""kalibr signup - Create a Kalibr account from the CLI."""
+"""kalibr auth - Link this agent to a Kalibr account via device code flow."""
 
 import os
+import sys
 import time
+import webbrowser
 
 import requests
 import typer
@@ -11,58 +13,63 @@ console = Console()
 BACKEND_URL = os.environ.get("KALIBR_BACKEND_URL", "https://kalibr-backend.fly.dev")
 
 
-def signup(
-    email: str = typer.Argument(..., help="Email address for your Kalibr account"),
-    org_name: str = typer.Option(None, "--org", help="Organization name (default: email prefix)"),
-) -> None:
-    """Create a Kalibr account and get API credentials. Human clicks one email link."""
+def auth() -> None:
+    """Link this agent to your Kalibr account. Human enters a code in the browser."""
 
-    console.print("[yellow]'kalibr signup' is deprecated. Use 'kalibr auth' instead.[/yellow]")
-    console.print("[yellow]   'kalibr auth' is more secure -- no email required.[/yellow]")
-    console.print()
-
-    console.print(f"[bold]Creating Kalibr account for {email}...[/bold]")
-
-    # Start signup
+    # Step 1: Request device code
     try:
         resp = requests.post(
-            f"{BACKEND_URL}/api/cli-auth/signup",
-            json={"email": email, "org_name": org_name},
+            f"{BACKEND_URL}/api/cli-auth/device-code",
+            json={},
             timeout=15,
         )
-
-        if resp.status_code == 409:
-            console.print("[yellow]Account already exists for this email.[/yellow]")
-            console.print("[yellow]Visit dashboard.kalibr.systems/sign-in or set KALIBR_API_KEY manually.[/yellow]")
-            raise typer.Exit(1)
-
-        if resp.status_code == 429:
-            console.print("[red]Too many signup attempts. Try again in an hour.[/red]")
-            raise typer.Exit(1)
-
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
-        console.print(f"[red]Signup failed: {e}[/red]")
+        console.print(f"[red]Failed to start auth: {e}[/red]")
         raise typer.Exit(1)
 
-    signup_id = data["signup_id"]
-    console.print(f"\n[green]✓ Verification email sent to {email}[/green]")
-    console.print("[cyan]Click the link in your email to activate your account...[/cyan]\n")
+    device_code = data["device_code"]
+    user_code = data["user_code"]
+    verification_url = data["verification_url"]
+    expires_in = data.get("expires_in", 900)
+    poll_interval = data.get("poll_interval_seconds", 5)
 
-    # Poll for verification
-    poll_url = f"{BACKEND_URL}/api/cli-auth/signup/{signup_id}/status"
-    max_wait = 300  # 5 minutes
+    # Step 2: Display code and URL
+    direct_url = f"{verification_url}?code={user_code}"
+
+    console.print()
+    console.print("[bold]Link this agent to your Kalibr account[/bold]")
+    console.print()
+    console.print(f"   Go to:     [cyan]{verification_url}[/cyan]")
+    console.print(f"   Enter code: [bold yellow]{user_code}[/bold yellow]")
+    console.print()
+    console.print(f"   Or open directly: [dim]{direct_url}[/dim]")
+    console.print()
+
+    # Try to open browser
+    try:
+        webbrowser.open(direct_url)
+        console.print("[dim]   (Opened in your browser)[/dim]")
+    except Exception:
+        pass
+
+    # Step 3: Poll for approval
     start = time.time()
 
-    with console.status("[bold cyan]Waiting for email verification...") as spinner:
-        while time.time() - start < max_wait:
+    with console.status("[bold cyan]Waiting for approval...") as spinner:
+        while time.time() - start < expires_in:
             try:
-                resp = requests.get(poll_url, timeout=10)
+                resp = requests.post(
+                    f"{BACKEND_URL}/api/cli-auth/token",
+                    json={"device_code": device_code},
+                    timeout=10,
+                )
+
                 if resp.status_code == 200:
                     result = resp.json()
 
-                    if result["status"] == "verified":
+                    if result["status"] == "approved":
                         api_key = result["api_key"]
                         tenant_id = result["tenant_id"]
 
@@ -97,22 +104,28 @@ def signup(
                         with open(env_path, "w") as f:
                             f.writelines(new_lines)
 
-                        console.print("\n[bold green]✓ Account created![/bold green]")
+                        console.print()
+                        console.print("[bold green]Agent linked![/bold green]")
                         console.print(f"  API Key:   {api_key[:12]}...")
                         console.print(f"  Tenant ID: {tenant_id}")
                         console.print(f"  Saved to:  {env_path}")
-                        console.print("\n[bold]Next: run 'kalibr init' to instrument your code[/bold]")
+                        console.print()
+                        console.print("[bold]Next: run 'kalibr init' to instrument your code[/bold]")
                         return
 
                     elif result["status"] == "expired":
-                        console.print("\n[red]Signup expired. Please try again.[/red]")
+                        console.print()
+                        console.print("[red]Code expired. Run 'kalibr auth' again.[/red]")
                         raise typer.Exit(1)
+
+                    # status == "pending" -- keep polling
 
             except requests.RequestException:
                 pass  # Retry on network errors
 
-            time.sleep(5)
+            time.sleep(poll_interval)
 
-    console.print("\n[red]Timed out waiting for email verification (5 minutes).[/red]")
-    console.print("[yellow]Check your inbox and spam folder, then run 'kalibr signup' again.[/yellow]")
+    console.print()
+    console.print("[red]Timed out waiting for approval (15 minutes).[/red]")
+    console.print("[yellow]Run 'kalibr auth' to try again.[/yellow]")
     raise typer.Exit(1)
