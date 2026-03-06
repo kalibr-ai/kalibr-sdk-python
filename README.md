@@ -6,12 +6,12 @@ Your agent captures its own execution telemetry, reports whether it achieved the
 
 ```
 pip install kalibr
-kalibr signup --email you@company.com
+kalibr auth
 kalibr init
 kalibr verify
 ```
 
-Your agent creates its own account, you click one email verification link, and it handles the rest — credentials, codebase scanning, framework detection, and instrumentation. Zero config.
+Your agent runs `kalibr auth`, your terminal shows a code, you enter it at dashboard.kalibr.systems/link, and the agent handles the rest — credentials, codebase scanning, framework detection, and instrumentation. One approval, zero config.
 
 Already have credentials? Skip signup:
 
@@ -79,18 +79,20 @@ export KALIBR_PROVISIONING_TOKEN=your-token  # create at dashboard.kalibr.system
 kalibr init  # scans your project and provisions credentials automatically
 ```
 
-Or sign up directly from the CLI:
+Or link via device code (recommended):
 
 ```bash
-kalibr signup --email you@company.com
-# Creates account, sends verification email. Click the link, agent gets sk_ key.
+kalibr auth
+# Terminal shows a code. Enter it at dashboard.kalibr.systems/link.
+# Agent receives credentials automatically. No email required.
 kalibr init
 ```
 
 ## CLI
 
 ```bash
-kalibr signup EMAIL  # create account from terminal, human clicks one email link
+kalibr auth          # link agent to your Kalibr account (device code — recommended)
+kalibr signup EMAIL  # DEPRECATED: use kalibr auth instead
 kalibr init          # scan codebase, wrap bare LLM calls with Router, provision credentials
 kalibr verify        # check credentials and Router connectivity
 kalibr prompt        # copy Claude Code / Cursor integration prompt to clipboard
