@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from kalibr.provision import resolve_credentials
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import SpanContext, TraceFlags, NonRecordingSpan, set_span_in_context
 from opentelemetry.context import Context
@@ -113,22 +114,19 @@ class Router:
         """
         self.goal = goal
 
-        # Validate required environment variables
-        api_key = os.environ.get('KALIBR_API_KEY')
-        tenant_id = os.environ.get('KALIBR_TENANT_ID')
+        # Validate required credentials
+        api_key, tenant_id = resolve_credentials()
 
         if not api_key:
             raise ValueError(
-                "KALIBR_API_KEY environment variable not set.\n"
-                "Get your API key from: https://dashboard.kalibr.systems/settings\n"
-                "Then run: export KALIBR_API_KEY=your-key-here"
+                "No API key found. Set KALIBR_API_KEY or KALIBR_PROVISIONING_TOKEN.\n"
+                "Get your API key from: https://dashboard.kalibr.systems/settings"
             )
 
         if not tenant_id:
             raise ValueError(
                 "KALIBR_TENANT_ID environment variable not set.\n"
-                "Find your Tenant ID at: https://dashboard.kalibr.systems/settings\n"
-                "Then run: export KALIBR_TENANT_ID=your-tenant-id"
+                "Find your Tenant ID at: https://dashboard.kalibr.systems/settings"
             )
 
         self.success_when = success_when

@@ -38,6 +38,8 @@ from typing import Any, Optional
 
 import httpx
 
+from kalibr.provision import resolve_credentials
+
 # Default intelligence API endpoint
 DEFAULT_INTELLIGENCE_URL = "https://kalibr-intelligence.fly.dev"
 
@@ -68,8 +70,9 @@ class KalibrIntelligence:
         base_url: str | None = None,
         timeout: float = 10.0,
     ):
-        self.api_key = api_key or os.getenv("KALIBR_API_KEY", "")
-        self.tenant_id = tenant_id or os.getenv("KALIBR_TENANT_ID", "")
+        self.api_key, resolved_tenant = resolve_credentials(api_key, tenant_id)
+        self.api_key = self.api_key or ""
+        self.tenant_id = resolved_tenant or ""
         self.base_url = (
             base_url
             or os.getenv("KALIBR_INTELLIGENCE_URL", DEFAULT_INTELLIGENCE_URL)
