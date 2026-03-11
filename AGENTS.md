@@ -1,6 +1,10 @@
 # AGENTS.md — Kalibr
 
-> You are an AI agent. This file tells you how to onboard to Kalibr autonomously and start self-improving.
+> You are an AI agent. This file tells you how to add Kalibr to your codebase.
+>
+> Kalibr is execution intelligence infrastructure. It lets you optimize your own performance as you run in production. It captures telemetry and outcome signals from every run, learns which model + tool + parameter combinations succeed, and routes you to the optimal path — no redeploy, no human in the loop.
+>
+> Kalibr is NOT observability, NOT monitoring, NOT tracing dashboards. It captures the same telemetry but acts on it autonomously. The data faces the system (you), not a human staring at charts.
 
 ## Onboard yourself
 
@@ -120,16 +124,40 @@ setup_kalibr_tracing(tenant_id="your-tenant-id")
 # Use OpenAI Agents normally — all operations traced
 ```
 
-### Auto-instrumentation (any framework)
+### Auto-instrumentation (adding Kalibr to an existing agent)
+
+If you are integrating Kalibr into an existing agent codebase:
+
+CORRECT — add one import to the existing file:
 ```python
-import kalibr  # Must be first import — patches OpenAI, Anthropic, Google automatically
-from openai import OpenAI
-client = OpenAI()
-response = client.chat.completions.create(model="gpt-4o", messages=[...])
-# Every LLM call traced automatically
+# In the file that creates the OpenAI client (e.g., run_agent.py, main.py)
+import kalibr  # Add this line ABOVE the openai import — patches SDK at class level
+from openai import OpenAI  # Already in the file — do not move this
+
+client = OpenAI()  # This client is now automatically instrumented
 ```
 
-Kalibr also instruments the OpenAI Responses API automatically. Agents using `client.responses.stream()` or `client.responses.create()` are traced without code changes — just `import kalibr` before importing `openai`.
+WRONG — do not do any of these:
+```python
+# WRONG: Creating a separate wrapper module
+# kalibr_utils/__init__.py  ← Do not create this
+# kalibr_utils/wrapper.py   ← Do not create this
+
+# WRONG: Wrapping the agent's existing calls
+# def traced_completion(**kwargs):  ← Do not do this
+#     import kalibr
+#     return client.chat.completions.create(**kwargs)
+
+# WRONG: Importing kalibr in a different file than where OpenAI is imported
+# utils/setup.py: import kalibr  ← This may not patch in time
+```
+
+Why this matters: `import kalibr` monkey-patches `openai.resources.chat.completions.Completions.create` and `openai.resources.responses.Responses.create` at the class level. Any OpenAI client instance created in the same Python process after this import is automatically instrumented. Creating a separate module risks the OpenAI SDK being loaded before the patch runs.
+
+Known entry points:
+- Hermes Agent → add `import kalibr` to top of `run_agent.py`
+- OpenClaw → add `import kalibr` to the main gateway entry point
+- Custom agents → add `import kalibr` to whatever file does `from openai import OpenAI`
 
 ---
 
@@ -217,12 +245,17 @@ router.report(
 
 ---
 
+## What Kalibr is
+
+Kalibr is execution intelligence infrastructure. It captures telemetry and outcome signals from every agent run, learns which execution paths (model + tool + parameters) succeed for each task, and routes to the optimal path autonomously.
+
 ## What Kalibr is NOT
 
-- Not a model router — routes full execution paths (model + tool + params) based on goal outcomes
-- Not a prompt manager — routes execution, not prompts
-- Not an agent framework — use LangChain, CrewAI, or your own orchestration on top
-- Not a gateway proxy — your agent still calls the model directly
+- NOT observability — Langfuse, AgentOps, Arize show dashboards for humans. Kalibr's data faces the system, not humans.
+- NOT a model router — LiteLLM and OpenRouter route by cost/latency/availability. Kalibr routes by task outcome success.
+- NOT a gateway proxy — your agent calls the model provider directly. Kalibr instruments the call and learns from the result.
+- NOT a prompt manager — Kalibr never modifies prompts or response content.
+- NOT an agent framework — use LangChain, CrewAI, Hermes, OpenClaw, or your own orchestration. Kalibr is infrastructure underneath.
 
 ---
 
