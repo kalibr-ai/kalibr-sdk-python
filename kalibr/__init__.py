@@ -110,7 +110,7 @@ if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
 
     # Auto-instrument available SDKs
     try:
-        auto_instrument(["openai", "anthropic", "google"])
+        auto_instrument(["openai", "anthropic", "google", "openai_responses"])
     except Exception as e:
         print(f"⚠️  Failed to auto-instrument SDKs: {e}")
 

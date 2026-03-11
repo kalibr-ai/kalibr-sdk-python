@@ -319,5 +319,109 @@ class TestCostConsistency:
         assert core_cost == instr_cost
 
 
+class TestOpenAIResponsesInstrumentation:
+    """Tests for OpenAI Responses API instrumentation"""
+
+    def test_can_instrument_responses_api(self):
+        """Test that OpenAI Responses API can be instrumented"""
+        from kalibr.instrumentation.openai_responses_instr import get_instrumentation
+
+        instr = get_instrumentation()
+        success = instr.instrument()
+        assert success is True
+        assert instr.is_instrumented is True
+        instr.uninstrument()
+
+    def test_can_uninstrument_responses_api(self):
+        """Test that OpenAI Responses API can be uninstrumented"""
+        from kalibr.instrumentation.openai_responses_instr import get_instrumentation
+
+        instr = get_instrumentation()
+        instr.instrument()
+        success = instr.uninstrument()
+        assert success is True
+        assert instr.is_instrumented is False
+
+    def test_responses_cost_calculation(self):
+        """Test cost calculation for OpenAI Responses API"""
+        from kalibr.instrumentation.openai_responses_instr import OpenAIResponsesCostAdapter
+
+        adapter = OpenAIResponsesCostAdapter()
+
+        cost = adapter.calculate_cost(
+            "gpt-4o-mini",
+            {"input_tokens": 1000, "output_tokens": 500}
+        )
+
+        # GPT-4o-mini: $0.15 input, $0.60 output per 1M tokens
+        expected = (1000 / 1_000_000 * 0.15) + (500 / 1_000_000 * 0.60)
+        assert abs(cost - expected) < 0.000001
+
+    def test_responses_cost_adapter_vendor_name(self):
+        """Test that vendor name is openai"""
+        from kalibr.instrumentation.openai_responses_instr import OpenAIResponsesCostAdapter
+
+        adapter = OpenAIResponsesCostAdapter()
+        assert adapter.get_vendor_name() == "openai"
+
+    def test_responses_cost_consistency_with_pricing_module(self):
+        """Test that Responses cost adapter matches centralized pricing"""
+        from kalibr.instrumentation.openai_responses_instr import OpenAIResponsesCostAdapter
+        from kalibr.pricing import compute_cost as pricing_compute_cost
+
+        adapter = OpenAIResponsesCostAdapter()
+
+        test_cases = [
+            ("gpt-4o", 1000, 500),
+            ("gpt-4", 2000, 1000),
+            ("gpt-4o-mini", 5000, 2500),
+        ]
+
+        for model, input_tokens, output_tokens in test_cases:
+            adapter_cost = adapter.calculate_cost(
+                model,
+                {"input_tokens": input_tokens, "output_tokens": output_tokens}
+            )
+            pricing_cost = pricing_compute_cost("openai", model, input_tokens, output_tokens)
+            assert adapter_cost == pricing_cost, f"Mismatch for {model}"
+
+    def test_responses_module_level_functions(self):
+        """Test module-level instrument/uninstrument functions"""
+        from kalibr.instrumentation import openai_responses_instr
+
+        success = openai_responses_instr.instrument()
+        assert success is True
+
+        success = openai_responses_instr.uninstrument()
+        assert success is True
+
+    def test_responses_singleton_pattern(self):
+        """Test that get_instrumentation returns same instance"""
+        from kalibr.instrumentation.openai_responses_instr import get_instrumentation
+
+        instr1 = get_instrumentation()
+        instr2 = get_instrumentation()
+        assert instr1 is instr2
+
+    def test_auto_instrument_includes_openai_responses(self):
+        """Test that auto_instrument with defaults includes openai_responses"""
+        results = auto_instrument()
+        assert "openai_responses" in results
+
+    def test_responses_patches_create_method(self):
+        """Test that instrumentation monkey-patches Responses.create"""
+        from kalibr.instrumentation.openai_responses_instr import get_instrumentation
+        from openai.resources.responses import Responses
+
+        instr = get_instrumentation()
+        original = Responses.create
+
+        instr.instrument()
+        assert Responses.create is not original
+
+        instr.uninstrument()
+        assert Responses.create is original
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
