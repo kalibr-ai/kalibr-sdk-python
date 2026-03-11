@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-03-11
+
+### Added
+
+- OpenAI Responses API instrumentation (`client.responses.create()` and `client.responses.stream()`)
+- Automatic telemetry capture for agents using the Responses API (e.g., Hermes Agent in codex_responses mode)
+- `openai_responses` provider in auto_instrument defaults — enabled automatically on `import kalibr`
+- Stream context manager wrapping — captures usage/cost/latency from `get_final_response()` after stream completion
+
 ## [1.4.2] - 2026-02-04
 
 ### Fixed
