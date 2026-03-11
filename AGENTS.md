@@ -129,6 +129,8 @@ response = client.chat.completions.create(model="gpt-4o", messages=[...])
 # Every LLM call traced automatically
 ```
 
+Kalibr also instruments the OpenAI Responses API automatically. Agents using `client.responses.stream()` or `client.responses.create()` are traced without code changes — just `import kalibr` before importing `openai`.
+
 ---
 
 ## Intelligence functions
