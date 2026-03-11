@@ -35,7 +35,7 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
 
     # Default to all providers if none specified
     if providers is None:
-        providers = ["openai", "anthropic", "google"]
+        providers = ["openai", "anthropic", "google", "openai_responses"]
 
     results = {}
 
@@ -78,6 +78,16 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
                     with _registry_lock:
                         _instrumented_providers.add(provider_lower)
                     print(f"✅ Instrumented Google Generative AI SDK")
+
+            elif provider_lower == "openai_responses":
+                from . import openai_responses_instr
+
+                success = openai_responses_instr.instrument()
+                results[provider_lower] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.add(provider_lower)
+                    print(f"✅ Instrumented OpenAI Responses API")
 
             else:
                 print(f"⚠️  Unknown provider: {provider}")
@@ -141,6 +151,16 @@ def uninstrument_all() -> Dict[str, bool]:
                     with _registry_lock:
                         _instrumented_providers.discard(provider)
                     print(f"✅ Uninstrumented Google Generative AI SDK")
+
+            elif provider == "openai_responses":
+                from . import openai_responses_instr
+
+                success = openai_responses_instr.uninstrument()
+                results[provider] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.discard(provider)
+                    print(f"✅ Uninstrumented OpenAI Responses API")
 
         except Exception as e:
             print(f"❌ Failed to uninstrument {provider}: {e}")
