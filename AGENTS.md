@@ -2,6 +2,88 @@
 
 > This file is for AI agents. It explains what Kalibr is and how to integrate it into your codebase.
 
+## Onboard yourself
+
+**Step 1: Install**
+
+```bash
+pip install kalibr
+```
+
+**Step 2: Authenticate — pick one**
+
+If your human has a provisioning token (fully autonomous, no browser needed):
+
+```bash
+export KALIBR_PROVISIONING_TOKEN=prov_live_...
+kalibr init    # credentials provisioned automatically, skip to Step 3
+```
+
+If no provisioning token, use device code auth (one human action, ~10 seconds):
+
+```bash
+kalibr auth
+# Prints a URL and short code, e.g.:
+#   Go to:      https://dashboard.kalibr.systems/link
+#   Enter code: ABCD-WXYZ
+# Show this to your human. They enter the code in their browser.
+# If you are inside a messaging platform (WhatsApp, Slack, Telegram),
+# send the URL and code as a message to your human and wait for approval.
+# Credentials are written to .env automatically when approved.
+```
+
+If your human already has credentials:
+
+```bash
+export KALIBR_API_KEY=sk_...
+export KALIBR_TENANT_ID=tenant_...
+```
+
+**Step 3: Instrument — pick the right pattern**
+
+If Kalibr should observe YOUR OWN execution (you are the agent being monitored):
+
+  Do NOT run kalibr init. See "If you ARE the agent being instrumented" below.
+
+If you are instrumenting a separate codebase that calls LLMs:
+
+```bash
+kalibr init     # scans for bare LLM calls, proposes Router wrapping
+kalibr verify   # confirms connectivity
+```
+
+## If you ARE the agent being instrumented
+
+If your human said "integrate Kalibr so it can monitor your calls" — or if you are a coding agent (Hermes, Claude Code, Cursor, etc.) — Kalibr should observe YOUR execution, not scan a separate codebase. Do NOT run kalibr init on your own framework internals.
+
+Add this as the very first import in your entry point:
+
+```python
+import kalibr  # must be first — patches OpenAI, Anthropic, Google automatically
+```
+
+That's it. Every LLM call you make is now traced.
+
+You are in this pattern if:
+- You are a coding agent running inside a harness or gateway
+- kalibr init reports "No bare LLM calls found"
+- Your human wants to see YOUR tool calls and responses in the Kalibr dashboard
+
+Framework one-liners:
+
+```python
+# CrewAI
+from kalibr_crewai import KalibrCrewAIInstrumentor
+KalibrCrewAIInstrumentor(tenant_id="your-tenant-id").instrument()
+
+# OpenAI Agents SDK
+from kalibr_openai_agents import setup_kalibr_tracing
+setup_kalibr_tracing(tenant_id="your-tenant-id")
+
+# Any other framework
+import kalibr  # first import, done
+```
+
 ## What Kalibr is
 
 Kalibr is infrastructure that lets AI agents optimize their own performance as they run in production. It captures telemetry and outcome signals from every run, learns which model + tool + parameter combinations work best, and routes the agent to the optimal path in real time — no redeploy, no human in the loop.
