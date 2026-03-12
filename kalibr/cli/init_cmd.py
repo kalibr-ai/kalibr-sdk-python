@@ -113,7 +113,16 @@ def init(
     matches = scan_directory(project_dir)
 
     if not matches:
-        console.print("[green]No bare LLM calls found. Your project is already clean.[/green]")
+        console.print("[yellow]No bare LLM calls found.[/yellow]")
+        console.print()
+        console.print("If you are instrumenting an agent framework or your own agent execution,")
+        console.print("use auto-instrumentation instead:")
+        console.print()
+        console.print("  [bold]import kalibr[/bold]  # add as first import in your entry point")
+        console.print()
+        console.print("[dim]This patches OpenAI, Anthropic, and Google automatically.[/dim]")
+        console.print("[dim]No Router wrapping needed — every LLM call is traced.[/dim]")
+        console.print("[dim]Docs: https://kalibr.systems/docs/quickstart#auto-instrumentation[/dim]")
         _check_credentials()
         return
 
