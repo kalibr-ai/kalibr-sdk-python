@@ -50,16 +50,25 @@ class Router:
     """
     Routes LLM requests to the best model based on learned outcomes.
 
-    Example:
+    Three scoring modes (in priority order):
+    1. score_when: Continuous scoring (0.0-1.0). Best for quality optimization.
+       Example: score_when=lambda out: min(1.0, len(out) / 500)
+    2. success_when: Binary scoring (True/False). Good for pass/fail checks.
+       Example: success_when=lambda out: "@" in out
+    3. Default: When neither is provided, Kalibr auto-scores using heuristics
+       (response length, structure, finish reason). Gives day-one metrics
+       without any evaluation code.
+
+    Examples:
+        # Continuous scoring (best quality signal)
         router = Router(
             goal="summarize",
             paths=["gpt-4o", "claude-sonnet-4-20250514"],
-            success_when=lambda out: len(out) > 100
+            score_when=lambda out: min(1.0, len(out) / 500)
         )
         response = router.completion(messages=[...])
 
-    Examples:
-        # Simple auto-reporting
+        # Binary auto-reporting
         router = Router(
             goal="extract_email",
             paths=["gpt-4o", "claude-sonnet-4-20250514"],
@@ -67,6 +76,14 @@ class Router:
         )
         response = router.completion(messages=[...])
         # report() called automatically
+
+        # Zero-config (default heuristic scoring)
+        router = Router(
+            goal="chat",
+            paths=["gpt-4o", "claude-sonnet-4-20250514"]
+        )
+        response = router.completion(messages=[...])
+        # Auto-scored using heuristics - no evaluation code needed
 
         # Manual reporting for complex validation
         router = Router(
@@ -88,11 +105,21 @@ class Router:
         goal: str,
         paths: Optional[List[PathSpec]] = None,
         success_when: Optional[Callable[[str], bool]] = None,
+        score_when: Optional[Callable[[str], float]] = None,
         exploration_rate: Optional[float] = None,
         auto_register: bool = True,
     ):
         """
         Initialize router.
+
+        Three scoring modes (in priority order):
+        1. score_when: Continuous scoring (0.0-1.0). Best for quality optimization.
+           Example: score_when=lambda out: min(1.0, len(out) / 500)
+        2. success_when: Binary scoring (True/False). Good for pass/fail checks.
+           Example: success_when=lambda out: "@" in out
+        3. Default: When neither is provided, Kalibr auto-scores using heuristics
+           (response length, structure, finish reason). Gives day-one metrics
+           without any evaluation code.
 
         Args:
             goal: Name of the goal (e.g., "book_meeting", "summarize")
@@ -109,6 +136,11 @@ class Router:
                          Examples:
                              success_when=lambda out: len(out) > 0  # Not empty
                              success_when=lambda out: "@" in out     # Contains email
+            score_when: Optional function to auto-evaluate quality from LLM output.
+                       Takes the output string and returns a float (0.0-1.0).
+                       Takes priority over success_when if both are provided.
+                       Examples:
+                           score_when=lambda out: min(1.0, len(out) / 500)
             exploration_rate: Override exploration rate (0.0-1.0)
             auto_register: If True, register paths on init
         """
@@ -130,6 +162,7 @@ class Router:
             )
 
         self.success_when = success_when
+        self.score_when = score_when
         self.exploration_rate = exploration_rate
         self._last_trace_id: Optional[str] = None
         self._last_model_id: Optional[str] = None
@@ -293,12 +326,24 @@ class Router:
                     # Success! Update state to reflect which model succeeded
                     self._last_model_id = candidate_model
 
-                    # Auto-report success if success_when provided
-                    if self.success_when and not self._outcome_reported:
+                    # Auto-report if any scoring mechanism is provided (or use defaults)
+                    if not self._outcome_reported:
                         try:
                             output = response.choices[0].message.content or ""
-                            success = self.success_when(output)
-                            self.report(success=success)
+
+                            if self.score_when:
+                                # Priority 1: User-provided continuous scorer
+                                score = self.score_when(output)
+                                score = min(1.0, max(0.0, float(score)))
+                                self.report(success=score >= 0.5, score=score)
+                            elif self.success_when:
+                                # Priority 2: User-provided binary scorer
+                                success = self.success_when(output)
+                                self.report(success=success)
+                            else:
+                                # Priority 3: Default heuristic scoring (zero-config)
+                                score = self._default_score(response)
+                                self.report(success=score >= 0.5, score=score)
                         except Exception as e:
                             logger.warning(f"Auto-outcome evaluation failed: {e}")
 
@@ -335,6 +380,72 @@ class Router:
 
     # Alias for common naming confusion
     complete = completion
+
+    def _default_score(self, response) -> float:
+        """
+        Compute a heuristic quality score from an LLM response.
+        Used when no success_when or score_when is provided.
+        Gives users day-one quality metrics without writing evaluation code.
+
+        Signals (all normalized to 0-1, then weighted average):
+        - non_empty: 1.0 if response has content, 0.0 if empty
+        - length_score: normalized response length (sigmoid around 200 chars)
+        - structure_score: bonus for JSON validity, markdown headers, bullet points
+        - finish_reason_score: 1.0 for "stop", 0.5 for "length" (truncated), 0.0 for error
+        """
+        try:
+            content = response.choices[0].message.content or ""
+        except (AttributeError, IndexError):
+            return 0.0
+
+        # Signal 1: Non-empty (binary)
+        non_empty = 1.0 if len(content.strip()) > 0 else 0.0
+        if non_empty == 0.0:
+            return 0.0  # Empty response is always 0
+
+        # Signal 2: Response length (sigmoid - most responses 50-2000 chars)
+        import math
+        char_count = len(content)
+        # Sigmoid centered at 200 chars, gives ~0.5 at 200, ~0.95 at 1000
+        length_score = 1.0 / (1.0 + math.exp(-0.005 * (char_count - 200)))
+
+        # Signal 3: Structure (JSON, markdown, lists indicate structured output)
+        structure_score = 0.5  # baseline
+        content_stripped = content.strip()
+        # JSON detection
+        if (content_stripped.startswith('{') and content_stripped.endswith('}')) or \
+           (content_stripped.startswith('[') and content_stripped.endswith(']')):
+            try:
+                import json
+                json.loads(content_stripped)
+                structure_score = 1.0  # Valid JSON
+            except (json.JSONDecodeError, ValueError):
+                structure_score = 0.3  # Looks like JSON but invalid
+        # Markdown/list detection
+        elif any(marker in content for marker in ['## ', '- ', '* ', '1. ', '```']):
+            structure_score = 0.8
+
+        # Signal 4: Finish reason
+        try:
+            finish_reason = response.choices[0].finish_reason
+            if finish_reason == "stop":
+                finish_score = 1.0
+            elif finish_reason == "length":
+                finish_score = 0.5  # Truncated
+            else:
+                finish_score = 0.3  # Unknown/error
+        except (AttributeError, IndexError):
+            finish_score = 0.5
+
+        # Weighted average
+        score = (
+            non_empty * 0.1 +
+            length_score * 0.3 +
+            structure_score * 0.3 +
+            finish_score * 0.3
+        )
+
+        return round(min(1.0, max(0.0, score)), 3)
 
     def report(
         self,
