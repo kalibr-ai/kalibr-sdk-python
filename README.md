@@ -1,6 +1,17 @@
-# Kalibr — Ship agents that fix themselves
+# Kalibr Python SDK
 
-Your agent captures its own execution telemetry, reports whether it achieved the goal, and Kalibr routes future calls to what actually works. When models degrade, Kalibr reroutes before users notice.
+Your agents silently degrade in production. Kalibr keeps them on the optimal execution path — scoring every call, learning what works, and routing to the best model+tool combination automatically.
+
+Open source SDK. Hosted optimization intelligence.
+
+## Features
+
+* **Outcome-aware routing** — Routes each goal to the model+tool path that is actually succeeding in production
+* **Continuous optimization** — Learns from real outcomes using Thompson Sampling. Adapts as models degrade, tools fail, or costs shift
+* **Auto-instrumentation** — Traces OpenAI, Anthropic, and Google AI calls with zero code changes
+* **TraceCapsule** — Cross-agent context propagation for multi-agent systems
+* **Cost & token tracking** — Real-time cost calculation and token monitoring across all providers
+* **Framework integrations** — LangChain, CrewAI, OpenAI Agents SDK
 
 ## Developers — hand this to your coding agent
 
