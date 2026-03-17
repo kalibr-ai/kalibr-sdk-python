@@ -124,3 +124,42 @@ class BaseCostAdapter(ABC):
         vendor = self.get_vendor_name()
         pricing, _ = get_pricing(vendor, model)
         return pricing
+
+
+class FlexibleCostAdapter(ABC):
+    """Cost adapter for any model type — tokens, audio, images, etc.
+
+    Unlike BaseCostAdapter (which assumes token-based pricing), this adapter
+    works with arbitrary usage metrics so it can handle voice, image,
+    embedding, and other non-token models.
+    """
+
+    @abstractmethod
+    def calculate_cost(self, model: str, usage_metrics: dict) -> float:
+        """Calculate cost in USD for an API call.
+
+        Args:
+            model: Model identifier
+            usage_metrics: Dict with task-appropriate keys such as
+                input_tokens, output_tokens, audio_seconds, characters,
+                image_count, etc.
+
+        Returns:
+            Cost in USD (rounded to 6 decimal places)
+        """
+        pass
+
+    @abstractmethod
+    def get_vendor_name(self) -> str:
+        """Return the vendor name for this adapter (e.g. "deepgram")."""
+        pass
+
+    @abstractmethod
+    def get_usage_metrics(self, response: Any) -> dict:
+        """Extract usage metrics from a provider response.
+
+        Returns:
+            Dict with task-appropriate keys like input_tokens,
+            audio_seconds, image_count, etc.
+        """
+        pass
