@@ -413,13 +413,19 @@ class KalibrIntelligence:
 
         Returns:
             dict with:
+                - trace_id: Unique ID to link this decision to outcome reporting
+                - path_id: The selected path ID
                 - model_id: The selected model
                 - tool_id: The selected tool (if any)
                 - params: Additional parameters (if any)
-                - reason: Human-readable explanation of the decision
+                - goal: The goal that was routed
+                - reason: Why this path was chosen (exploitation, exploration_random, etc.)
                 - confidence: Confidence score (0-1)
-                - is_exploration: Whether this is an exploration choice
-                - path_id: The selected path ID
+                - exploration: Whether this is an exploration choice
+                - success_rate: Historical success rate for this path
+                - sample_count: Number of samples for this path
+                - decided_at: Timestamp of the decision
+                - alternatives_considered: Number of paths evaluated
 
         Raises:
             httpx.HTTPStatusError: If the API returns an error
