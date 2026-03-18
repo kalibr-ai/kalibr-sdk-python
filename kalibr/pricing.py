@@ -11,7 +11,7 @@ Version: 2026-01
 Last Updated: January 2026
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 # Pricing version for tracking updates
 PRICING_VERSION = "2026-01"
@@ -242,4 +242,110 @@ def compute_cost(
     output_cost = (output_tokens / 1_000_000) * pricing["output"]
 
     return round(input_cost + output_cost, 6)
+
+
+# ---------------------------------------------------------------------------
+# Flexible (non-token) pricing for voice, image, embedding, and other models
+# ---------------------------------------------------------------------------
+
+# Unit pricing for models that are not priced per token.
+# Structure: vendor -> model -> {unit, price_per_unit}
+# "unit" describes what is being charged (e.g. "characters", "audio_seconds",
+# "images").  "price_per_unit" is the USD cost for *one* of that unit.
+UNIT_PRICING: Dict[str, Dict[str, Dict[str, Any]]] = {
+    "huggingface": {
+        # Audio models — priced per second of audio
+        "openai/whisper-large-v3": {"unit": "audio_seconds", "price_per_unit": 0.0001},
+        "facebook/seamless-m4t-v2-large": {"unit": "audio_seconds", "price_per_unit": 0.0002},
+        # Image generation — priced per image
+        "stabilityai/stable-diffusion-xl-base-1.0": {"unit": "images", "price_per_unit": 0.002},
+        # Embedding models — priced per 1M tokens (same unit as LLMs)
+        "sentence-transformers/all-minilm-l6-v2": {"unit": "tokens", "price_per_unit_1m": 0.03},
+    },
+    "elevenlabs": {
+        "eleven_multilingual_v2": {"unit": "characters", "price_per_unit": 0.00003},
+        "eleven_monolingual_v1": {"unit": "characters", "price_per_unit": 0.00002},
+        "eleven_turbo_v2": {"unit": "characters", "price_per_unit": 0.000025},
+    },
+    "deepgram": {
+        "nova-2": {"unit": "audio_seconds", "price_per_unit": 0.0043},
+        "nova-2-medical": {"unit": "audio_seconds", "price_per_unit": 0.007},
+        "whisper-large": {"unit": "audio_seconds", "price_per_unit": 0.0048},
+    },
+}
+
+
+def get_unit_type(vendor: str, model: str) -> str:
+    """Return the billing unit for a vendor/model pair.
+
+    Args:
+        vendor: Vendor name (e.g. "deepgram", "elevenlabs", "openai")
+        model: Model identifier
+
+    Returns:
+        Unit string such as "tokens", "audio_seconds", "characters", or
+        "images".  Defaults to "tokens" when the model is not found in
+        UNIT_PRICING (i.e. it is assumed to be a standard LLM).
+    """
+    vendor = vendor.lower()
+    model_lower = model.lower()
+    vendor_models = UNIT_PRICING.get(vendor, {})
+    model_info = vendor_models.get(model_lower)
+    if model_info is not None:
+        return model_info["unit"]
+    return "tokens"
+
+
+def compute_cost_flexible(
+    vendor: str, model: str, usage_metrics: dict
+) -> float:
+    """Compute cost for any model type — tokens, audio, images, etc.
+
+    Checks UNIT_PRICING first for non-token models, then falls back to the
+    existing token-based ``compute_cost()`` for standard LLMs.
+
+    Args:
+        vendor: Vendor name
+        model: Model identifier
+        usage_metrics: Dict with task-appropriate keys.  Supported keys
+            include ``input_tokens``, ``output_tokens``, ``audio_seconds``,
+            ``characters``, ``image_count``, and any future unit types.
+
+    Returns:
+        Cost in USD (rounded to 6 decimal places)
+    """
+    vendor_lower = vendor.lower()
+    model_lower = model.lower()
+    vendor_models = UNIT_PRICING.get(vendor_lower, {})
+    model_info = vendor_models.get(model_lower)
+
+    if model_info is not None:
+        unit = model_info["unit"]
+
+        if unit == "tokens":
+            # Embedding-style: price_per_unit_1m is per 1M tokens
+            price_per_1m = model_info["price_per_unit_1m"]
+            total_tokens = usage_metrics.get("input_tokens", 0) + usage_metrics.get(
+                "output_tokens", 0
+            )
+            return round((total_tokens / 1_000_000) * price_per_1m, 6)
+
+        price = model_info["price_per_unit"]
+
+        if unit == "audio_seconds":
+            quantity = usage_metrics.get("audio_seconds", 0)
+        elif unit == "characters":
+            quantity = usage_metrics.get("characters", 0)
+        elif unit == "images":
+            quantity = usage_metrics.get("image_count", 0)
+        else:
+            # Generic fallback — look for a key matching the unit name
+            quantity = usage_metrics.get(unit, 0)
+
+        return round(quantity * price, 6)
+
+    # Fall back to existing token-based pricing
+    input_tokens = usage_metrics.get("input_tokens", 0)
+    output_tokens = usage_metrics.get("output_tokens", 0)
+    return compute_cost(vendor, model, input_tokens, output_tokens)
 
