@@ -347,7 +347,7 @@ class TestComputeCostFlexible:
         cost = compute_cost_flexible(
             "deepgram", "nova-2", {"audio_seconds": 60}
         )
-        expected = round(60 * 0.0043, 6)
+        expected = round(60 * 0.0000717, 6)
         assert cost == expected
 
     def test_deepgram_zero_seconds(self):
@@ -360,7 +360,7 @@ class TestComputeCostFlexible:
         cost = compute_cost_flexible(
             "elevenlabs", "eleven_multilingual_v2", {"characters": 10000}
         )
-        expected = round(10000 * 0.00003, 6)
+        expected = round(10000 * 0.0003, 6)
         assert cost == expected
 
     # -- Images --
