@@ -276,14 +276,19 @@ UNIT_PRICING: Dict[str, Dict[str, Dict[str, Any]]] = {
         "sentence-transformers/all-minilm-l6-v2": {"unit": "tokens", "price_per_unit_1m": 0.03},
     },
     "elevenlabs": {
-        "eleven_multilingual_v2": {"unit": "characters", "price_per_unit": 0.00003},
-        "eleven_monolingual_v1": {"unit": "characters", "price_per_unit": 0.00002},
-        "eleven_turbo_v2": {"unit": "characters", "price_per_unit": 0.000025},
+        "eleven_multilingual_v2": {"unit": "characters", "price_per_unit": 0.0003},
+        "eleven_monolingual_v1": {"unit": "characters", "price_per_unit": 0.0002},
+        "eleven_turbo_v2": {"unit": "characters", "price_per_unit": 0.00015},
     },
     "deepgram": {
-        "nova-2": {"unit": "audio_seconds", "price_per_unit": 0.0043},
-        "nova-2-medical": {"unit": "audio_seconds", "price_per_unit": 0.007},
-        "whisper-large": {"unit": "audio_seconds", "price_per_unit": 0.0048},
+        "nova-2": {"unit": "audio_seconds", "price_per_unit": 0.0000717},
+        "nova-2-medical": {"unit": "audio_seconds", "price_per_unit": 0.0001167},
+        "whisper-large": {"unit": "audio_seconds", "price_per_unit": 0.00008},
+    },
+    "openai": {
+        "tts-1": {"unit": "characters", "price_per_unit": 0.000015},
+        "tts-1-hd": {"unit": "characters", "price_per_unit": 0.00003},
+        "whisper-1": {"unit": "audio_seconds", "price_per_unit": 0.0001},
     },
 }
 
