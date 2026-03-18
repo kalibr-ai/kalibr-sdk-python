@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-03-18
+
+### Added
+
+- **Multimodal foundation** — Any model, any modality. Text LLMs, voice, image, embeddings, classification, translation
+- **HuggingFace InferenceClient instrumentation** — All 17 task types auto-instrumented (chat_completion, text_generation, automatic_speech_recognition, text_to_speech, text_to_image, feature_extraction, text_classification, token_classification, fill_mask, audio_classification, image_to_text, image_classification, image_segmentation, object_detection, translation, summarization, table_question_answering)
+- **Router.execute()** — Route any HuggingFace task with the same outcome-learning loop as Router.completion()
+- **Unified pricing** — UNIT_PRICING supports tokens, audio_seconds, characters, and images through compute_cost_flexible()
+- **Multimodal trace schema** — TraceEvent supports audio_duration_ms, audio_format, image_count, image_resolution, modality, task_type, unit_type
+- **FlexibleCostAdapter** — Base class for cost adapters across any billing unit
+- **14 intelligence task types**: transcribe, synthesize, image_gen, image_classify, embed, translate (new) + code, summarize, classify, generate, extract, qa, chat, general (existing)
+
+### Fixed
+
+- ElevenLabs pricing corrected (was 10x too low)
+- Deepgram pricing corrected (per-minute price was in per-second field, 60x too high)
+- OpenAI voice models (tts-1, tts-1-hd, whisper-1) added to UNIT_PRICING
+- HuggingFace cost adapter now delegates to centralized pricing for non-token models
+
 ## [1.6.0] - 2026-03-11
 
 ### Added

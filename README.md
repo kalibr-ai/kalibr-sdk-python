@@ -1,6 +1,6 @@
 # Kalibr Python SDK
 
-Your agents silently degrade in production. Kalibr keeps them on the optimal execution path — scoring every call, learning what works, and routing to the best model+tool combination automatically.
+Kalibr lets agents choose the optimal model + tools for any task, across any modality, as they run in production.
 
 Open source SDK. Hosted optimization intelligence.
 
@@ -11,6 +11,8 @@ Open source SDK. Hosted optimization intelligence.
 * **Auto-instrumentation** — Traces OpenAI, Anthropic, and Google AI calls with zero code changes
 * **TraceCapsule** — Cross-agent context propagation for multi-agent systems
 * **Cost & token tracking** — Real-time cost calculation and token monitoring across all providers
+* **Any model, any modality** — Text LLMs, voice, image, embeddings, classification, translation, anything on HuggingFace
+* **HuggingFace integration** — One instrumentor covers all 17 task types across every modality
 * **Framework integrations** — LangChain, CrewAI, OpenAI Agents SDK
 
 ## Developers — hand this to your coding agent
@@ -54,6 +56,26 @@ router = Router(
 response = router.completion(
     messages=[{"role": "user", "content": "Extract the company: Hi from Stripe."}]
 )
+```
+
+## Multimodal Routing
+
+Route any ML task, not just text LLMs:
+
+```python
+from kalibr import Router
+
+# Transcription
+router = Router(
+    goal="transcribe_call",
+    paths=["openai/whisper-large-v3", "facebook/seamless-m4t-v2-large"],
+    success_when=lambda output: len(output) > 50
+)
+result = router.execute(task="automatic_speech_recognition", input_data=audio_bytes)
+
+# Image generation
+router = Router(goal="product_image", paths=["stabilityai/stable-diffusion-xl-base-1.0"])
+result = router.execute(task="text_to_image", input_data="a product photo")
 ```
 
 `pip install kalibr`
@@ -257,7 +279,7 @@ pip install kalibr[langchain-all]   # LangChain with all providers
 
 ## Auto-Instrumentation
 
-Kalibr auto-instruments OpenAI, Anthropic, and Google SDKs on import:
+Kalibr auto-instruments OpenAI, Anthropic, Google, and HuggingFace SDKs on import (17 task types across every modality):
 
 ```python
 import kalibr  # Must be first import

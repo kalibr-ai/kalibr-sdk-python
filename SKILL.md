@@ -15,7 +15,7 @@ metadata:
 
 # Kalibr — agents that fix themselves
 
-Ship agents that fix themselves. Kalibr learns what's working as your agents run in production and routes them around failures, degradations, and cost spikes before you know they're happening.
+Kalibr lets agents choose the optimal model + tools for any task, across any modality, as they run in production.
 
 You define candidate execution paths — model + tools + parameters. Kalibr figures out which one wins for each task from real production telemetry. When a path degrades at 3am, your agents are already on the next best path. No alerts. No debugging. No you.
 
@@ -27,6 +27,8 @@ You define candidate execution paths — model + tools + parameters. Kalibr figu
 - User is hardcoding `model="gpt-4o"` and wants something that adapts
 - User asks about production monitoring, cost optimization, or agent routing
 - User asks how to stop agents from breaking when a provider has an outage
+- User is building multimodal agents and wants unified optimization across text, voice, and image
+- User wants to route HuggingFace models based on production outcomes
 
 ## Install
 
@@ -100,6 +102,7 @@ response = router.completion(messages=[...])
 - **CrewAI**: Pass `ChatKalibr` as any agent's `llm`
 - **OpenAI Agents SDK**: Drop-in replacement
 - **Any Python code that calls an LLM**
+- **HuggingFace**: Any of 17 task types across every modality
 
 ## How it works
 
