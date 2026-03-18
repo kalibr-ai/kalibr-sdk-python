@@ -381,23 +381,150 @@ class Router:
     # Alias for common naming confusion
     complete = completion
 
+    def execute(self, task: str, input_data: Any, **kwargs) -> Any:
+        """Execute any ML task with intelligent routing.
+
+        Args:
+            task: HuggingFace task type ("automatic_speech_recognition", "text_to_image", etc.)
+            input_data: Task-appropriate input (audio bytes, text prompt, etc.)
+            **kwargs: Additional task-specific parameters
+
+        Returns:
+            Task-appropriate response (transcription text, PIL image, etc.)
+        """
+        from kalibr.intelligence import decide, report_outcome
+
+        # Reset state for new request
+        self._outcome_reported = False
+
+        # Step 1: Get routing decision
+        try:
+            decision = decide(goal=self.goal)
+            model_id = decision.get("model_id") or self._paths[0]["model"]
+            self._last_decision = decision
+        except Exception as e:
+            logger.warning(f"Routing failed, using fallback: {e}")
+            model_id = self._paths[0]["model"]
+            self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
+
+        # Step 2: Determine trace_id
+        decision_trace_id = self._last_decision.get("trace_id") if self._last_decision else None
+        trace_id = decision_trace_id or uuid.uuid4().hex
+        self._last_trace_id = trace_id
+        self._last_model_id = model_id
+
+        # Step 3: Execute the task via HuggingFace Inference API
+        try:
+            from huggingface_hub import InferenceClient
+        except ImportError:
+            raise ImportError("Install 'huggingface_hub' package: pip install huggingface_hub")
+
+        client = InferenceClient()
+
+        # Map task names to InferenceClient methods
+        task_method_map = {
+            "automatic_speech_recognition": client.automatic_speech_recognition,
+            "text_to_image": client.text_to_image,
+            "image_to_text": client.image_to_text,
+            "text_to_speech": client.text_to_speech,
+            "translation": client.translation,
+            "summarization": client.summarization,
+            "text_classification": client.text_classification,
+            "image_classification": client.image_classification,
+            "object_detection": client.object_detection,
+            "feature_extraction": client.feature_extraction,
+        }
+
+        method = task_method_map.get(task)
+        if method is None:
+            raise ValueError(
+                f"Unsupported task '{task}'. Supported tasks: {', '.join(sorted(task_method_map.keys()))}"
+            )
+
+        try:
+            response = method(input_data, model=model_id, **kwargs)
+        except Exception as e:
+            # Report failure
+            try:
+                report_outcome(
+                    trace_id=trace_id,
+                    goal=self.goal,
+                    success=False,
+                    failure_reason=f"provider_error: {type(e).__name__}",
+                    model_id=model_id,
+                )
+            except Exception:
+                pass
+            self._outcome_reported = True
+            raise
+
+        # Step 4: Score and report
+        if not self._outcome_reported:
+            try:
+                if self.score_when:
+                    score = self.score_when(response)
+                    score = min(1.0, max(0.0, float(score)))
+                    self.report(success=score >= 0.5, score=score)
+                elif self.success_when:
+                    success = self.success_when(response)
+                    self.report(success=success)
+                else:
+                    score = self._default_score(response)
+                    self.report(success=score >= 0.5, score=score)
+            except Exception as e:
+                logger.warning(f"Auto-outcome evaluation failed: {e}")
+
+        return response
+
     def _default_score(self, response) -> float:
         """
         Compute a heuristic quality score from an LLM response.
         Used when no success_when or score_when is provided.
         Gives users day-one quality metrics without writing evaluation code.
 
-        Signals (all normalized to 0-1, then weighted average):
+        Handles multiple response types:
+        - Chat completion (has .choices[0].message.content) -> text heuristics
+        - bytes (audio) -> 1.0 if non-empty
+        - Transcription (has .text attribute) -> text heuristics on .text
+        - PIL.Image -> 1.0 if not None
+        - Other -> 0.5 (neutral, let user-provided scorer handle it)
+
+        Signals for text scoring (all normalized to 0-1, then weighted average):
         - non_empty: 1.0 if response has content, 0.0 if empty
         - length_score: normalized response length (sigmoid around 200 chars)
         - structure_score: bonus for JSON validity, markdown headers, bullet points
         - finish_reason_score: 1.0 for "stop", 0.5 for "length" (truncated), 0.0 for error
         """
+        # Handle bytes (e.g., audio output)
+        if isinstance(response, bytes):
+            return 1.0 if len(response) > 0 else 0.0
+
+        # Handle PIL.Image
+        try:
+            from PIL import Image
+            if isinstance(response, Image.Image):
+                return 1.0
+        except ImportError:
+            pass
+
+        # Handle transcription-style responses (has .text but no .choices)
+        if hasattr(response, "text") and not hasattr(response, "choices"):
+            content = response.text or ""
+            return self._score_text_content(content)
+
+        # Handle chat completion responses
         try:
             content = response.choices[0].message.content or ""
         except (AttributeError, IndexError):
-            return 0.0
+            # Unknown response type - return neutral score
+            if response is None:
+                return 0.0
+            return 0.5
 
+        return self._score_text_content(content, response)
+
+    def _score_text_content(self, content: str, response: Any = None) -> float:
+        """Score text content using heuristics. Used by _default_score for text-based responses."""
         # Signal 1: Non-empty (binary)
         non_empty = 1.0 if len(content.strip()) > 0 else 0.0
         if non_empty == 0.0:
@@ -426,16 +553,18 @@ class Router:
             structure_score = 0.8
 
         # Signal 4: Finish reason
-        try:
-            finish_reason = response.choices[0].finish_reason
-            if finish_reason == "stop":
-                finish_score = 1.0
-            elif finish_reason == "length":
-                finish_score = 0.5  # Truncated
-            else:
-                finish_score = 0.3  # Unknown/error
-        except (AttributeError, IndexError):
-            finish_score = 0.5
+        finish_score = 0.5  # default when no response object
+        if response is not None:
+            try:
+                finish_reason = response.choices[0].finish_reason
+                if finish_reason == "stop":
+                    finish_score = 1.0
+                elif finish_reason == "length":
+                    finish_score = 0.5  # Truncated
+                else:
+                    finish_score = 0.3  # Unknown/error
+            except (AttributeError, IndexError):
+                finish_score = 0.5
 
         # Weighted average
         score = (
@@ -530,6 +659,9 @@ class Router:
             return self._call_anthropic(model_id, messages, tools, **kwargs)
         elif model_id.startswith(("gemini-", "models/gemini")):
             return self._call_google(model_id, messages, tools, **kwargs)
+        elif "/" in model_id and not model_id.startswith(("models/", "ft:")):
+            # org/model format = HuggingFace
+            return self._call_huggingface(model_id, messages, tools, **kwargs)
         else:
             # Default to OpenAI-compatible
             logger.info(f"Unknown model prefix '{model_id}', trying OpenAI")
@@ -603,6 +735,50 @@ class Router:
 
         # Convert to OpenAI format
         return self._google_to_openai_response(response, model)
+
+    def _call_huggingface(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
+        """Call HuggingFace Inference API and convert response to OpenAI format."""
+        try:
+            from huggingface_hub import InferenceClient
+        except ImportError:
+            raise ImportError("Install 'huggingface_hub' package: pip install huggingface_hub")
+
+        client = InferenceClient()
+
+        call_kwargs = {"model": model, "messages": messages, **kwargs}
+
+        response = client.chat.completions.create(**call_kwargs)
+
+        return self._huggingface_to_openai_response(response, model)
+
+    def _huggingface_to_openai_response(self, response: Any, model: str) -> Any:
+        """Convert HuggingFace chat completion response to OpenAI format."""
+        from types import SimpleNamespace
+
+        # HuggingFace chat completions return OpenAI-compatible format,
+        # but normalize to SimpleNamespace for consistent attribute access
+        choices = []
+        for choice in response.choices:
+            choices.append(SimpleNamespace(
+                index=choice.index,
+                message=SimpleNamespace(
+                    role=choice.message.role,
+                    content=choice.message.content or "",
+                ),
+                finish_reason=getattr(choice, "finish_reason", "stop"),
+            ))
+
+        usage_obj = getattr(response, "usage", None)
+        return SimpleNamespace(
+            id=getattr(response, "id", f"hf-{model}"),
+            model=model,
+            choices=choices,
+            usage=SimpleNamespace(
+                prompt_tokens=getattr(usage_obj, "prompt_tokens", 0),
+                completion_tokens=getattr(usage_obj, "completion_tokens", 0),
+                total_tokens=getattr(usage_obj, "total_tokens", 0),
+            ),
+        )
 
     def _anthropic_to_openai_response(self, response: Any, model: str) -> Any:
         """Convert Anthropic response to OpenAI format."""
