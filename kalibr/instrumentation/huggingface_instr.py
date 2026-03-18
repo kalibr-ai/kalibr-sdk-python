@@ -31,6 +31,14 @@ TASK_MODALITY = {
     "text_to_image": "image",
     "feature_extraction": "embedding",
     "text_classification": "classification",
+    "token_classification": "text",
+    "fill_mask": "text",
+    "audio_classification": "audio",
+    "image_to_text": "image",
+    "image_classification": "image",
+    "image_segmentation": "image",
+    "object_detection": "image",
+    "table_question_answering": "text",
 }
 
 # Methods to patch on InferenceClient / AsyncInferenceClient
@@ -44,6 +52,14 @@ PATCHED_METHODS = [
     "text_classification",
     "translation",
     "summarization",
+    "token_classification",
+    "fill_mask",
+    "audio_classification",
+    "image_to_text",
+    "image_classification",
+    "image_segmentation",
+    "object_detection",
+    "table_question_answering",
 ]
 
 
@@ -127,6 +143,27 @@ def _extract_metrics(task: str, response: Any) -> dict:
     elif task == "text_classification":
         if isinstance(response, list) and len(response) > 0:
             metrics["label_count"] = len(response)
+
+    elif task in ("token_classification", "image_classification"):
+        if isinstance(response, list) and len(response) > 0:
+            metrics["label_count"] = len(response)
+
+    elif task in ("fill_mask", "image_to_text", "table_question_answering"):
+        if hasattr(response, "details") and response.details:
+            details = response.details
+            metrics["input_tokens"] = getattr(details, "prefill_tokens", 0) or 0
+            metrics["output_tokens"] = getattr(details, "generated_tokens", 0) or 0
+        elif isinstance(response, dict):
+            details = response.get("details", {}) or {}
+            metrics["input_tokens"] = details.get("prefill_tokens", 0)
+            metrics["output_tokens"] = details.get("generated_tokens", 0)
+
+    elif task == "audio_classification":
+        if isinstance(response, list) and len(response) > 0:
+            metrics["label_count"] = len(response)
+
+    elif task in ("image_segmentation", "object_detection"):
+        metrics["image_count"] = 1
 
     return metrics
 

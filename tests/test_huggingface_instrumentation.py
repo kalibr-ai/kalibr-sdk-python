@@ -95,6 +95,30 @@ def _make_mock_inference_client():
         def summarization(self, text=None, model=None, **kwargs):
             return Mock()
 
+        def token_classification(self, text=None, model=None, **kwargs):
+            return [{"entity_group": "PER", "score": 0.99, "word": "John"}]
+
+        def fill_mask(self, text=None, model=None, **kwargs):
+            return Mock()
+
+        def audio_classification(self, audio=None, model=None, **kwargs):
+            return [{"label": "speech", "score": 0.95}]
+
+        def image_to_text(self, image=None, model=None, **kwargs):
+            return Mock()
+
+        def image_classification(self, image=None, model=None, **kwargs):
+            return [{"label": "cat", "score": 0.97}]
+
+        def image_segmentation(self, image=None, model=None, **kwargs):
+            return Mock()
+
+        def object_detection(self, image=None, model=None, **kwargs):
+            return Mock()
+
+        def table_question_answering(self, table=None, query=None, model=None, **kwargs):
+            return Mock()
+
     class MockAsyncInferenceClient:
         def __init__(self, model=None, **kwargs):
             self.model = model
@@ -124,6 +148,30 @@ def _make_mock_inference_client():
             return Mock()
 
         async def summarization(self, text=None, model=None, **kwargs):
+            return Mock()
+
+        async def token_classification(self, text=None, model=None, **kwargs):
+            return [{"entity_group": "PER", "score": 0.99, "word": "John"}]
+
+        async def fill_mask(self, text=None, model=None, **kwargs):
+            return Mock()
+
+        async def audio_classification(self, audio=None, model=None, **kwargs):
+            return [{"label": "speech", "score": 0.95}]
+
+        async def image_to_text(self, image=None, model=None, **kwargs):
+            return Mock()
+
+        async def image_classification(self, image=None, model=None, **kwargs):
+            return [{"label": "cat", "score": 0.97}]
+
+        async def image_segmentation(self, image=None, model=None, **kwargs):
+            return Mock()
+
+        async def object_detection(self, image=None, model=None, **kwargs):
+            return Mock()
+
+        async def table_question_answering(self, table=None, query=None, model=None, **kwargs):
             return Mock()
 
     mock_module.InferenceClient = MockInferenceClient
@@ -539,6 +587,104 @@ class TestImportErrorHandling:
                 sys.modules["huggingface_hub"] = original
             else:
                 sys.modules.pop("huggingface_hub", None)
+
+
+class TestAllTasksCovered:
+    """Test that all 17 task types are in the modality map and patch list."""
+
+    def test_all_17_tasks_in_modality_map(self):
+        from kalibr.instrumentation.huggingface_instr import TASK_MODALITY
+
+        expected_tasks = {
+            "chat_completion", "text_generation", "translation", "summarization",
+            "automatic_speech_recognition", "text_to_speech", "text_to_image",
+            "feature_extraction", "text_classification",
+            "token_classification", "fill_mask", "audio_classification",
+            "image_to_text", "image_classification", "image_segmentation",
+            "object_detection", "table_question_answering",
+        }
+        assert set(TASK_MODALITY.keys()) == expected_tasks
+        assert len(TASK_MODALITY) == 17
+
+    def test_all_17_methods_in_patch_list(self):
+        from kalibr.instrumentation.huggingface_instr import PATCHED_METHODS
+
+        expected_methods = {
+            "chat_completion", "text_generation", "translation", "summarization",
+            "automatic_speech_recognition", "text_to_speech", "text_to_image",
+            "feature_extraction", "text_classification",
+            "token_classification", "fill_mask", "audio_classification",
+            "image_to_text", "image_classification", "image_segmentation",
+            "object_detection", "table_question_answering",
+        }
+        assert set(PATCHED_METHODS) == expected_methods
+        assert len(PATCHED_METHODS) == 17
+
+
+class TestExtractMetricsNewTasks:
+    """Test _extract_metrics for newly added task types."""
+
+    def test_token_classification_metrics(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = [
+            {"entity_group": "PER", "score": 0.99, "word": "John"},
+            {"entity_group": "LOC", "score": 0.95, "word": "Paris"},
+        ]
+        metrics = _extract_metrics("token_classification", response)
+        assert metrics == {"label_count": 2}
+
+    def test_object_detection_metrics(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = [{"label": "cat", "score": 0.98, "box": {"xmin": 0, "ymin": 0, "xmax": 100, "ymax": 100}}]
+        metrics = _extract_metrics("object_detection", response)
+        assert metrics == {"image_count": 1}
+
+    def test_audio_classification_metrics(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = [
+            {"label": "speech", "score": 0.95},
+            {"label": "music", "score": 0.05},
+        ]
+        metrics = _extract_metrics("audio_classification", response)
+        assert metrics == {"label_count": 2}
+
+    def test_image_segmentation_metrics(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = Mock()
+        metrics = _extract_metrics("image_segmentation", response)
+        assert metrics == {"image_count": 1}
+
+    def test_image_classification_metrics(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = [{"label": "cat", "score": 0.97}, {"label": "dog", "score": 0.03}]
+        metrics = _extract_metrics("image_classification", response)
+        assert metrics == {"label_count": 2}
+
+    def test_fill_mask_metrics_from_dict(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = {"details": {"prefill_tokens": 10, "generated_tokens": 5}}
+        metrics = _extract_metrics("fill_mask", response)
+        assert metrics == {"input_tokens": 10, "output_tokens": 5}
+
+    def test_image_to_text_metrics_from_dict(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = {"details": {"prefill_tokens": 20, "generated_tokens": 15}}
+        metrics = _extract_metrics("image_to_text", response)
+        assert metrics == {"input_tokens": 20, "output_tokens": 15}
+
+    def test_table_question_answering_metrics_from_dict(self):
+        from kalibr.instrumentation.huggingface_instr import _extract_metrics
+
+        response = {"details": {"prefill_tokens": 50, "generated_tokens": 10}}
+        metrics = _extract_metrics("table_question_answering", response)
+        assert metrics == {"input_tokens": 50, "output_tokens": 10}
 
 
 if __name__ == "__main__":
