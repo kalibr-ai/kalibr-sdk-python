@@ -342,7 +342,7 @@ class TestCostCalculation:
         # Should use centralized pricing; cost > 0
         assert cost >= 0.0
 
-    def test_cost_adapter_non_token_returns_zero(self):
+    def test_cost_adapter_non_token_delegates_to_centralized_pricing(self):
         from kalibr.instrumentation.huggingface_instr import HuggingFaceCostAdapter
 
         adapter = HuggingFaceCostAdapter()
@@ -350,7 +350,22 @@ class TestCostCalculation:
             "openai/whisper-large-v3",
             {"audio_duration_ms": 5000},
         )
-        assert cost == 0.0
+        # 5000 ms = 5 seconds, at $0.0001/sec = $0.0005
+        assert cost > 0.0
+        assert cost == round(5.0 * 0.0001, 6)
+
+    def test_cost_adapter_audio_model_returns_nonzero(self):
+        """Verify a known HuggingFace audio model returns non-zero cost."""
+        from kalibr.instrumentation.huggingface_instr import HuggingFaceCostAdapter
+
+        adapter = HuggingFaceCostAdapter()
+        cost = adapter.compute_cost_flexible(
+            "openai/whisper-large-v3",
+            {"audio_seconds": 10},
+        )
+        # 10 seconds at $0.0001/sec = $0.001
+        assert cost > 0.0
+        assert cost == 0.001
 
     def test_calculate_cost_delegates_to_flexible(self):
         from kalibr.instrumentation.huggingface_instr import HuggingFaceCostAdapter

@@ -177,9 +177,18 @@ class HuggingFaceCostAdapter(BaseCostAdapter):
             output_cost = (output_tokens / 1_000_000) * pricing["output"]
             return round(input_cost + output_cost, 6)
 
-        # Non-token modalities: HuggingFace Inference API pricing is
-        # deployment-dependent. Return 0 rather than guess.
-        return 0.0
+        # Non-token modalities: delegate to centralized pricing which
+        # handles audio, image, and other unit-based models via UNIT_PRICING.
+        from kalibr.pricing import compute_cost_flexible as pricing_compute
+
+        # Convert audio_duration_ms → audio_seconds if present, since
+        # the centralized pricing expects audio_seconds.
+        adapted_usage = dict(usage)
+        duration_ms = adapted_usage.pop("audio_duration_ms", 0)
+        if duration_ms:
+            adapted_usage["audio_seconds"] = duration_ms / 1000.0
+
+        return pricing_compute("huggingface", model, adapted_usage)
 
     def get_usage_metrics(self, task: str, response: Any) -> dict:
         """Extract usage metrics from a response based on task type.
