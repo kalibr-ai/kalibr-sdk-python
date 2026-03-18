@@ -48,6 +48,18 @@ MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
         "claude-2.0": {"input": 8.00, "output": 24.00},
         "claude-instant-1.2": {"input": 0.80, "output": 2.40},
     },
+    "huggingface": {
+        # Meta Llama models (HuggingFace Inference API pricing)
+        "meta-llama/llama-3-70b-instruct": {"input": 0.90, "output": 0.90},
+        "meta-llama/llama-3-8b-instruct": {"input": 0.20, "output": 0.20},
+        "meta-llama/llama-3.1-405b-instruct": {"input": 5.00, "output": 15.00},
+        "meta-llama/llama-3.1-70b-instruct": {"input": 0.90, "output": 0.90},
+        "meta-llama/llama-3.1-8b-instruct": {"input": 0.20, "output": 0.20},
+        # Mistral models
+        "mistralai/mistral-7b-instruct-v0.3": {"input": 0.20, "output": 0.20},
+        "mistralai/mixtral-8x7b-instruct-v0.1": {"input": 0.60, "output": 0.60},
+        # Default fallback for unknown HuggingFace models
+    },
     "google": {
         # Gemini 2.5 models
         "gemini-2.5-pro": {"input": 1.25, "output": 5.00},
@@ -70,6 +82,7 @@ DEFAULT_PRICING: Dict[str, Dict[str, float]] = {
     "openai": {"input": 30.00, "output": 60.00},  # GPT-4 pricing
     "anthropic": {"input": 15.00, "output": 75.00},  # Claude 3 Opus pricing
     "google": {"input": 1.25, "output": 5.00},  # Gemini 1.5 Pro pricing
+    "huggingface": {"input": 1.00, "output": 1.00},  # Conservative default
 }
 
 
