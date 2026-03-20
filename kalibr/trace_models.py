@@ -82,8 +82,8 @@ class TraceEvent(BaseModel):
     )
 
     # LLM Details
-    provider: Literal["openai", "anthropic", "google", "cohere", "custom"] = Field(
-        description="LLM provider"
+    provider: str = Field(
+        description="LLM provider (e.g., openai, anthropic, google, elevenlabs, deepgram)"
     )
     model_id: str = Field(
         min_length=1, max_length=64, description="Model identifier (e.g., gpt-4o, claude-3-opus)"
@@ -145,6 +145,20 @@ class TraceEvent(BaseModel):
     )
     request_id: Optional[str] = Field(
         None, max_length=64, description="Request identifier for correlation"
+    )
+
+    # Multimodal fields
+    audio_duration_ms: Optional[float] = Field(
+        None, ge=0.0, description="Audio duration in milliseconds"
+    )
+    modality: Optional[str] = Field(
+        None, max_length=32, description="Modality type (e.g., text, audio, image)"
+    )
+    task_type: Optional[str] = Field(
+        None, max_length=32, description="Task type (e.g., tts, stt, chat_completion)"
+    )
+    unit_type: Optional[str] = Field(
+        None, max_length=32, description="Billing unit type (e.g., characters, audio_seconds, tokens)"
     )
 
     # Metadata

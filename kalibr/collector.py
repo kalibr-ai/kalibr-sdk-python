@@ -234,23 +234,17 @@ class KalibrHTTPSpanExporter(SpanExporter):
             "environment": self.environment,
         }
 
-        # Detect voice spans and add voice metadata
+        # Detect voice spans and populate explicit trace fields
         voice_operation = self._get_attr(span, "voice.operation", default=None)
         if voice_operation:
-            event["metadata"] = {
-                "voice_operation": voice_operation,
-                "voice_id": self._get_attr(span, "voice.voice_id", default=None),
-                "character_count": self._get_attr(span, "voice.character_count", default=None),
-                "audio_duration_ms": self._get_attr(
-                    span, "voice.audio_duration_ms", default=None
-                ),
-                "voice_model_id": self._get_attr(span, "voice.model_id", default=None),
-                "source_type": self._get_attr(span, "voice.source_type", default=None),
-            }
-            # Remove None values from metadata
-            event["metadata"] = {
-                k: v for k, v in event["metadata"].items() if v is not None
-            }
+            event["audio_duration_ms"] = self._get_attr(
+                span, "voice.audio_duration_ms", default=None
+            )
+            event["modality"] = "audio"
+            event["task_type"] = voice_operation  # "tts" or "stt"
+            event["unit_type"] = (
+                "characters" if voice_operation == "tts" else "audio_seconds"
+            )
 
         return event
 

@@ -419,7 +419,7 @@ class Router:
             SimpleNamespace with: audio, kalibr_trace_id, model, cost_usd
         """
         from types import SimpleNamespace
-        from kalibr.pricing import compute_voice_cost
+        from kalibr.pricing import compute_cost_flexible
 
         model_id = kwargs.pop("model", None) or (
             self._paths[0]["model"] if self._paths else "tts-1"
@@ -444,7 +444,7 @@ class Router:
             result = self._dispatch_voice_tts(model_id, text, voice, **kwargs)
             character_count = len(text) if isinstance(text, str) else 0
             vendor = self._detect_voice_vendor(model_id)
-            cost = compute_voice_cost(vendor, model_id, characters=character_count)
+            cost = compute_cost_flexible(vendor, model_id, {"characters": character_count})
 
             return SimpleNamespace(
                 audio=result,
@@ -465,7 +465,7 @@ class Router:
             SimpleNamespace with: text, kalibr_trace_id, model, cost_usd
         """
         from types import SimpleNamespace
-        from kalibr.pricing import compute_voice_cost
+        from kalibr.pricing import compute_cost_flexible
 
         model_id = kwargs.pop("model", None) or (
             self._paths[0]["model"] if self._paths else "whisper-1"
@@ -489,11 +489,9 @@ class Router:
         ):
             result = self._dispatch_voice_stt(model_id, audio, language, **kwargs)
             text = result if isinstance(result, str) else getattr(result, "text", str(result))
-            duration_min = kwargs.get("audio_duration_minutes", 0.0)
+            audio_seconds = kwargs.get("audio_duration_seconds", 0.0)
             vendor = self._detect_voice_vendor(model_id)
-            cost = compute_voice_cost(
-                vendor, model_id, audio_duration_minutes=duration_min
-            )
+            cost = compute_cost_flexible(vendor, model_id, {"audio_seconds": audio_seconds})
 
             return SimpleNamespace(
                 text=text,

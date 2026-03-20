@@ -14,26 +14,22 @@ from typing import Any, Dict, Optional
 
 from opentelemetry.trace import SpanKind
 
-from .base import BaseVoiceCostAdapter, BaseInstrumentation
+from kalibr.pricing import compute_cost_flexible
+
+from .base import FlexibleCostAdapter, BaseInstrumentation
 
 
-class DeepgramCostAdapter(BaseVoiceCostAdapter):
+class DeepgramCostAdapter(FlexibleCostAdapter):
     """Cost calculation adapter for Deepgram voice models."""
 
     def get_vendor_name(self) -> str:
         return "deepgram"
 
-    def calculate_cost(self, model: str, usage: Dict[str, Any]) -> float:
-        pricing = self.get_voice_pricing_for_model(model)
-        if pricing["unit"] == "per_minute":
-            duration_min = usage.get("audio_duration_minutes", 0.0)
-            cost = duration_min * pricing["price"]
-        elif pricing["unit"] == "per_1k_chars":
-            characters = usage.get("characters", 0)
-            cost = (characters / 1_000) * pricing["price"]
-        else:
-            cost = 0.0
-        return round(cost, 6)
+    def calculate_cost(self, model: str, usage_metrics: Dict[str, Any]) -> float:
+        return compute_cost_flexible("deepgram", model, usage_metrics)
+
+    def get_usage_metrics(self, response: Any) -> Dict[str, Any]:
+        return {}
 
 
 class DeepgramInstrumentation(BaseInstrumentation):
@@ -209,9 +205,9 @@ class DeepgramInstrumentation(BaseInstrumentation):
                     duration_ms = self._extract_duration_ms(result)
                     span.set_attribute("voice.audio_duration_ms", duration_ms)
 
-                    duration_min = duration_ms / 60_000
+                    audio_seconds = duration_ms / 1000
                     cost = self.cost_adapter.calculate_cost(
-                        model, {"audio_duration_minutes": duration_min}
+                        model, {"audio_seconds": audio_seconds}
                     )
                     span.set_attribute("llm.cost_usd", cost)
 
@@ -257,9 +253,9 @@ class DeepgramInstrumentation(BaseInstrumentation):
                     duration_ms = self._extract_duration_ms(result)
                     span.set_attribute("voice.audio_duration_ms", duration_ms)
 
-                    duration_min = duration_ms / 60_000
+                    audio_seconds = duration_ms / 1000
                     cost = self.cost_adapter.calculate_cost(
-                        model, {"audio_duration_minutes": duration_min}
+                        model, {"audio_seconds": audio_seconds}
                     )
                     span.set_attribute("llm.cost_usd", cost)
 

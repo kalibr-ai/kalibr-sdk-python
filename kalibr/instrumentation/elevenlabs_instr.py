@@ -14,20 +14,22 @@ from typing import Any, Dict, Optional
 
 from opentelemetry.trace import SpanKind
 
-from .base import BaseVoiceCostAdapter, BaseInstrumentation
+from kalibr.pricing import compute_cost_flexible
+
+from .base import FlexibleCostAdapter, BaseInstrumentation
 
 
-class ElevenLabsCostAdapter(BaseVoiceCostAdapter):
+class ElevenLabsCostAdapter(FlexibleCostAdapter):
     """Cost calculation adapter for ElevenLabs voice models."""
 
     def get_vendor_name(self) -> str:
         return "elevenlabs"
 
-    def calculate_cost(self, model: str, usage: Dict[str, Any]) -> float:
-        pricing = self.get_voice_pricing_for_model(model)
-        characters = usage.get("characters", 0)
-        cost = (characters / 1_000) * pricing["price"]
-        return round(cost, 6)
+    def calculate_cost(self, model: str, usage_metrics: Dict[str, Any]) -> float:
+        return compute_cost_flexible("elevenlabs", model, usage_metrics)
+
+    def get_usage_metrics(self, response: Any) -> Dict[str, Any]:
+        return {}
 
 
 class ElevenLabsInstrumentation(BaseInstrumentation):

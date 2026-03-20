@@ -73,8 +73,8 @@ class TestRouterSynthesize:
         text = "a" * 1000  # 1000 characters
         result = router.synthesize(text, model="tts-1")
 
-        # TTS-1: $0.015 per 1K chars
-        expected_cost = (1000 / 1_000) * 0.015
+        # TTS-1: 0.000015 per character
+        expected_cost = 0.000015 * 1000
         assert abs(result.cost_usd - expected_cost) < 0.000001
 
 
@@ -86,7 +86,7 @@ class TestRouterTranscribe:
         mock_stt.return_value = mock_response
         router = Router(goal="test_stt", paths=["whisper-1"], auto_register=False)
         result = router.transcribe(
-            b"audio-bytes", model="whisper-1", audio_duration_minutes=1.0
+            b"audio-bytes", model="whisper-1", audio_duration_seconds=60.0
         )
 
         assert result.text == "Hello world"
@@ -101,7 +101,7 @@ class TestRouterTranscribe:
         mock_stt.return_value = mock_response
         router = Router(goal="test_stt", paths=["nova-2"], auto_register=False)
         result = router.transcribe(
-            b"audio-bytes", model="nova-2", audio_duration_minutes=5.0
+            b"audio-bytes", model="nova-2", audio_duration_seconds=300.0
         )
 
         assert result.model == "nova-2"
@@ -113,11 +113,11 @@ class TestRouterTranscribe:
         mock_stt.return_value = "Hello"
         router = Router(goal="test_stt", paths=["whisper-1"], auto_register=False)
         result = router.transcribe(
-            b"audio", model="whisper-1", audio_duration_minutes=10.0
+            b"audio", model="whisper-1", audio_duration_seconds=600.0
         )
 
-        # Whisper-1: $0.006 per minute
-        expected_cost = 10.0 * 0.006
+        # Whisper-1: 0.0001 per second, 600 seconds
+        expected_cost = 0.0001 * 600
         assert abs(result.cost_usd - expected_cost) < 0.000001
 
 

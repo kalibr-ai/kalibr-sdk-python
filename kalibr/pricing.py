@@ -11,7 +11,7 @@ Version: 2026-01
 Last Updated: January 2026
 """
 
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 # Pricing version for tracking updates
 PRICING_VERSION = "2026-01"
@@ -245,157 +245,71 @@ def compute_cost(
 
 
 # ============================================================================
-# VOICE MODEL PRICING
+# UNIT PRICING — Flexible pricing for any billing unit
 # ============================================================================
-# Prices vary by unit: per_1k_chars for TTS, per_minute for STT
-VOICE_PRICING: Dict[str, Dict[str, Dict[str, Union[str, float]]]] = {
-    "elevenlabs": {
-        "eleven_multilingual_v2": {"unit": "per_1k_chars", "price": 0.30},
-        "eleven_multilingual_v1": {"unit": "per_1k_chars", "price": 0.30},
-        "eleven_monolingual_v1": {"unit": "per_1k_chars", "price": 0.30},
-        "eleven_turbo_v2": {"unit": "per_1k_chars", "price": 0.15},
-        "eleven_turbo_v2_5": {"unit": "per_1k_chars", "price": 0.15},
-        "eleven_flash_v2": {"unit": "per_1k_chars", "price": 0.08},
-        "eleven_flash_v2_5": {"unit": "per_1k_chars", "price": 0.08},
-    },
-    "openai": {
-        "tts-1": {"unit": "per_1k_chars", "price": 0.015},
-        "tts-1-hd": {"unit": "per_1k_chars", "price": 0.030},
-        "whisper-1": {"unit": "per_minute", "price": 0.006},
-    },
-    "deepgram": {
-        "nova-2": {"unit": "per_minute", "price": 0.0043},
-        "nova-2-general": {"unit": "per_minute", "price": 0.0043},
-        "nova-2-meeting": {"unit": "per_minute", "price": 0.0043},
-        "nova-2-phonecall": {"unit": "per_minute", "price": 0.0043},
-        "nova": {"unit": "per_minute", "price": 0.0043},
-        "enhanced": {"unit": "per_minute", "price": 0.0145},
-        "base": {"unit": "per_minute", "price": 0.0125},
-        "aura-asteria-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-luna-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-stella-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-athena-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-hera-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-orion-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-arcas-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-perseus-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-angus-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-orpheus-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-helios-en": {"unit": "per_1k_chars", "price": 0.0065},
-        "aura-zeus-en": {"unit": "per_1k_chars", "price": 0.0065},
-    },
-}
-
-VOICE_DEFAULT_PRICING: Dict[str, Dict[str, Union[str, float]]] = {
-    "elevenlabs": {"unit": "per_1k_chars", "price": 0.30},
-    "openai": {"unit": "per_1k_chars", "price": 0.030},
-    "deepgram": {"unit": "per_minute", "price": 0.0043},
+# All prices are per single unit (one character, one second, one image, etc.)
+UNIT_PRICING: Dict[Tuple[str, str], Dict[str, Any]] = {
+    # ElevenLabs TTS (per character)
+    ("elevenlabs", "eleven_multilingual_v2"): {"unit_type": "characters", "price_per_unit": 0.0003},
+    ("elevenlabs", "eleven_multilingual_v1"): {"unit_type": "characters", "price_per_unit": 0.0003},
+    ("elevenlabs", "eleven_monolingual_v1"): {"unit_type": "characters", "price_per_unit": 0.0003},
+    ("elevenlabs", "eleven_turbo_v2"): {"unit_type": "characters", "price_per_unit": 0.00015},
+    ("elevenlabs", "eleven_turbo_v2_5"): {"unit_type": "characters", "price_per_unit": 0.00015},
+    ("elevenlabs", "eleven_flash_v2"): {"unit_type": "characters", "price_per_unit": 0.00008},
+    ("elevenlabs", "eleven_flash_v2_5"): {"unit_type": "characters", "price_per_unit": 0.00008},
+    # OpenAI TTS (per character)
+    ("openai", "tts-1"): {"unit_type": "characters", "price_per_unit": 0.000015},
+    ("openai", "tts-1-hd"): {"unit_type": "characters", "price_per_unit": 0.00003},
+    # OpenAI STT (per second)
+    ("openai", "whisper-1"): {"unit_type": "audio_seconds", "price_per_unit": 0.0001},
+    # Deepgram STT (per second)
+    ("deepgram", "nova-2"): {"unit_type": "audio_seconds", "price_per_unit": 0.0000717},
+    ("deepgram", "nova-2-general"): {"unit_type": "audio_seconds", "price_per_unit": 0.0000717},
+    ("deepgram", "nova-2-meeting"): {"unit_type": "audio_seconds", "price_per_unit": 0.0000717},
+    ("deepgram", "nova-2-phonecall"): {"unit_type": "audio_seconds", "price_per_unit": 0.0000717},
+    ("deepgram", "nova"): {"unit_type": "audio_seconds", "price_per_unit": 0.0000717},
+    ("deepgram", "enhanced"): {"unit_type": "audio_seconds", "price_per_unit": 0.0002417},
+    ("deepgram", "base"): {"unit_type": "audio_seconds", "price_per_unit": 0.0002083},
+    # Deepgram TTS — Aura voices (per character)
+    ("deepgram", "aura-asteria-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-luna-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-stella-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-athena-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-hera-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-orion-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-arcas-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-perseus-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-angus-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-orpheus-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-helios-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
+    ("deepgram", "aura-zeus-en"): {"unit_type": "characters", "price_per_unit": 0.0000065},
 }
 
 
-def normalize_voice_model_name(vendor: str, model_name: str) -> str:
-    """Normalize voice model name to match pricing table keys.
-
-    Args:
-        vendor: Vendor name (elevenlabs, openai, deepgram)
-        model_name: Raw model name
-
-    Returns:
-        Normalized model name
-    """
-    vendor = vendor.lower()
-    model_lower = model_name.lower()
-
-    vendor_models = VOICE_PRICING.get(vendor, {})
-    if model_lower in vendor_models:
-        return model_lower
-
-    if vendor == "deepgram":
-        # nova-2-general variants -> nova-2-general, etc.
-        for key in vendor_models:
-            if key in model_lower:
-                return key
-        if "nova-2" in model_lower:
-            return "nova-2"
-        if "nova" in model_lower:
-            return "nova"
-        if "aura" in model_lower:
-            return "aura-asteria-en"
-
-    elif vendor == "elevenlabs":
-        for key in vendor_models:
-            if key in model_lower:
-                return key
-        if "flash" in model_lower:
-            return "eleven_flash_v2_5"
-        if "turbo" in model_lower:
-            return "eleven_turbo_v2_5"
-        if "multilingual" in model_lower:
-            return "eleven_multilingual_v2"
-
-    elif vendor == "openai":
-        if "tts-1-hd" in model_lower:
-            return "tts-1-hd"
-        if "tts" in model_lower:
-            return "tts-1"
-        if "whisper" in model_lower:
-            return "whisper-1"
-
-    return model_lower
-
-
-def get_voice_pricing(
-    vendor: str, model_name: str
-) -> Tuple[Dict[str, Union[str, float]], str]:
-    """Get pricing for a voice model.
-
-    Args:
-        vendor: Vendor name (elevenlabs, openai, deepgram)
-        model_name: Model identifier
-
-    Returns:
-        Tuple of (pricing dict with 'unit' and 'price' keys, normalized model name)
-    """
-    vendor = vendor.lower()
-    normalized = normalize_voice_model_name(vendor, model_name)
-
-    vendor_models = VOICE_PRICING.get(vendor, {})
-    pricing = vendor_models.get(normalized)
-
-    if pricing is None:
-        pricing = VOICE_DEFAULT_PRICING.get(vendor, {"unit": "per_1k_chars", "price": 0.30})
-
-    return pricing, normalized
-
-
-def compute_voice_cost(
-    vendor: str,
-    model_name: str,
-    characters: int = 0,
-    audio_duration_minutes: float = 0.0,
+def compute_cost_flexible(
+    vendor: str, model: str, usage_metrics: Dict[str, Any]
 ) -> float:
-    """Compute cost in USD for a voice API call.
+    """Compute cost for any billing unit type.
 
     Args:
-        vendor: Vendor name (elevenlabs, openai, deepgram)
-        model_name: Model identifier
-        characters: Number of characters (for TTS)
-        audio_duration_minutes: Audio duration in minutes (for STT)
+        vendor: Vendor name (e.g., "elevenlabs", "openai", "deepgram")
+        model: Model identifier
+        usage_metrics: Dict mapping unit type to quantity,
+                       e.g. {"characters": 3000} or {"audio_seconds": 120}
 
     Returns:
         Cost in USD (rounded to 6 decimal places)
     """
-    pricing, _ = get_voice_pricing(vendor, model_name)
+    vendor = vendor.lower()
+    model = model.lower()
 
-    unit = pricing["unit"]
-    price = pricing["price"]
+    pricing = UNIT_PRICING.get((vendor, model))
+    if pricing is None:
+        return 0.0
 
-    if unit == "per_1k_chars":
-        cost = (characters / 1_000) * price
-    elif unit == "per_minute":
-        cost = audio_duration_minutes * price
-    else:
-        cost = 0.0
+    unit_type = pricing["unit_type"]
+    price_per_unit = pricing["price_per_unit"]
 
-    return round(cost, 6)
+    quantity = usage_metrics.get(unit_type, 0)
+    return round(price_per_unit * quantity, 6)
 

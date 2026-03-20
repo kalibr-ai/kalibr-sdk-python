@@ -14,59 +14,43 @@ from typing import Any, Dict, Optional
 
 from opentelemetry.trace import SpanKind
 
-from .base import BaseCostAdapter, BaseInstrumentation, BaseVoiceCostAdapter
+from kalibr.pricing import compute_cost_flexible
+
+from .base import BaseCostAdapter, BaseInstrumentation, FlexibleCostAdapter
 
 
 class OpenAICostAdapter(BaseCostAdapter):
     """Cost calculation adapter for OpenAI models.
-    
+
     Uses centralized pricing from kalibr.pricing module.
     """
 
     def get_vendor_name(self) -> str:
-        """Return vendor name for OpenAI."""
         return "openai"
 
     def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
-        """Calculate cost in USD for an OpenAI API call.
-        
-        Args:
-            model: Model identifier (e.g., "gpt-4o", "gpt-4o-2024-05-13")
-            usage: Token usage dict with prompt_tokens and completion_tokens
-            
-        Returns:
-            Cost in USD (rounded to 6 decimal places)
-        """
-        # Get pricing from centralized module (handles normalization)
         pricing = self.get_pricing_for_model(model)
 
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
 
-        # Calculate cost (pricing is per 1M tokens)
         input_cost = (prompt_tokens / 1_000_000) * pricing["input"]
         output_cost = (completion_tokens / 1_000_000) * pricing["output"]
 
         return round(input_cost + output_cost, 6)
 
 
-class OpenAIVoiceCostAdapter(BaseVoiceCostAdapter):
+class OpenAIVoiceCostAdapter(FlexibleCostAdapter):
     """Cost calculation adapter for OpenAI voice models (TTS/STT)."""
 
     def get_vendor_name(self) -> str:
         return "openai"
 
-    def calculate_cost(self, model: str, usage: Dict[str, Any]) -> float:
-        pricing = self.get_voice_pricing_for_model(model)
-        if pricing["unit"] == "per_1k_chars":
-            characters = usage.get("characters", 0)
-            cost = (characters / 1_000) * pricing["price"]
-        elif pricing["unit"] == "per_minute":
-            duration_min = usage.get("audio_duration_minutes", 0.0)
-            cost = duration_min * pricing["price"]
-        else:
-            cost = 0.0
-        return round(cost, 6)
+    def calculate_cost(self, model: str, usage_metrics: Dict[str, Any]) -> float:
+        return compute_cost_flexible("openai", model, usage_metrics)
+
+    def get_usage_metrics(self, response: Any) -> Dict[str, Any]:
+        return {}
 
 
 class OpenAIInstrumentation(BaseInstrumentation):
