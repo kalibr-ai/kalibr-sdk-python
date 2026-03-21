@@ -266,7 +266,7 @@ result = tts_router.synthesize("Hello from Kalibr!", voice="alloy")
 
 # STT routing
 stt_router = Router(goal="transcribe_call", paths=["whisper-1"])
-result = stt_router.transcribe(audio_bytes, audio_duration_minutes=2.5)
+result = stt_router.transcribe(audio_bytes, audio_duration_seconds=150.0)
 # result.text, result.cost_usd, result.kalibr_trace_id
 ```
 

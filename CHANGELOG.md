@@ -12,10 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Voice AI Support** — trace, cost-track, and route voice operations (TTS/STT)
-  - Voice pricing infrastructure: `VOICE_PRICING` dict with per-character (TTS) and per-minute (STT) pricing for ElevenLabs, OpenAI (tts-1, tts-1-hd, whisper-1), and Deepgram (nova-2, aura-*)
-  - `get_voice_pricing()`, `compute_voice_cost()`, `normalize_voice_model_name()` in `kalibr.pricing`
-  - Voice cost adapters: `BaseVoiceCostAdapter`, `ElevenLabsCostAdapter`, `OpenAIVoiceCostAdapter`, `DeepgramCostAdapter` in `kalibr.cost_adapter`
-  - `CostAdapterFactory.compute_voice_cost()`, `register_voice_adapter()`, `get_voice_adapter()`
+  - Flexible pricing infrastructure: `UNIT_PRICING` nested dict with per-character (TTS) and per-second (STT) pricing for ElevenLabs, OpenAI (tts-1, tts-1-hd, whisper-1), and Deepgram (nova-2, aura-*)
+  - `compute_cost_flexible(vendor, model, usage_metrics)` in `kalibr.pricing` — single function for any billing unit type
+  - `FlexibleCostAdapter` ABC in `kalibr.instrumentation.base` — `ElevenLabsCostAdapter`, `OpenAIVoiceCostAdapter`, `DeepgramCostAdapter` in `kalibr.cost_adapter`
+  - `CostAdapterFactory.compute_voice_cost()` delegates to `compute_cost_flexible()`
 - **Voice SDK Auto-Instrumentation**
   - ElevenLabs: patches `ElevenLabs.generate()` (sync/async) with OTel spans and cost tracking
   - Deepgram: patches `ListenRESTClient.transcribe_file/transcribe_url` (sync/async) with OTel spans

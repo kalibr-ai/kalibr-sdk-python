@@ -43,7 +43,7 @@ try:
     # Note: requires an actual audio file
     # result = stt_router.transcribe(
     #     open("audio.mp3", "rb"),
-    #     audio_duration_minutes=1.5,
+    #     audio_duration_seconds=90.0,
     # )
     # print(f"STT Result: {result.text}")
     # print(f"  Cost: ${result.cost_usd:.6f}")

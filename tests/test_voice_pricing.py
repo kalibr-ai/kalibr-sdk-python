@@ -12,45 +12,47 @@ class TestUnitPricingStructure:
     """Test UNIT_PRICING data structure"""
 
     def test_elevenlabs_models_exist(self):
-        assert ("elevenlabs", "eleven_multilingual_v2") in UNIT_PRICING
-        assert ("elevenlabs", "eleven_turbo_v2") in UNIT_PRICING
-        assert ("elevenlabs", "eleven_flash_v2_5") in UNIT_PRICING
+        assert "eleven_multilingual_v2" in UNIT_PRICING["elevenlabs"]
+        assert "eleven_turbo_v2" in UNIT_PRICING["elevenlabs"]
+        assert "eleven_flash_v2_5" in UNIT_PRICING["elevenlabs"]
 
     def test_openai_voice_models_exist(self):
-        assert ("openai", "tts-1") in UNIT_PRICING
-        assert ("openai", "tts-1-hd") in UNIT_PRICING
-        assert ("openai", "whisper-1") in UNIT_PRICING
+        assert "tts-1" in UNIT_PRICING["openai"]
+        assert "tts-1-hd" in UNIT_PRICING["openai"]
+        assert "whisper-1" in UNIT_PRICING["openai"]
 
     def test_deepgram_models_exist(self):
-        assert ("deepgram", "nova-2") in UNIT_PRICING
-        assert ("deepgram", "aura-asteria-en") in UNIT_PRICING
-        assert ("deepgram", "enhanced") in UNIT_PRICING
-        assert ("deepgram", "base") in UNIT_PRICING
+        assert "nova-2" in UNIT_PRICING["deepgram"]
+        assert "aura-asteria-en" in UNIT_PRICING["deepgram"]
+        assert "enhanced" in UNIT_PRICING["deepgram"]
+        assert "base" in UNIT_PRICING["deepgram"]
 
     def test_all_entries_have_required_keys(self):
-        for key, data in UNIT_PRICING.items():
-            assert "unit_type" in data, f"Missing unit_type for {key}"
-            assert "price_per_unit" in data, f"Missing price_per_unit for {key}"
-            assert data["price_per_unit"] > 0, f"Zero/negative price for {key}"
+        for vendor, models in UNIT_PRICING.items():
+            for model, data in models.items():
+                assert "unit" in data, f"Missing unit for {vendor}/{model}"
+                assert "price_per_unit" in data, f"Missing price_per_unit for {vendor}/{model}"
+                assert data["price_per_unit"] > 0, f"Zero/negative price for {vendor}/{model}"
 
     def test_unit_types_valid(self):
         valid_types = {"characters", "audio_seconds"}
-        for key, data in UNIT_PRICING.items():
-            assert data["unit_type"] in valid_types, f"Invalid unit_type for {key}: {data['unit_type']}"
+        for vendor, models in UNIT_PRICING.items():
+            for model, data in models.items():
+                assert data["unit"] in valid_types, f"Invalid unit for {vendor}/{model}: {data['unit']}"
 
     def test_elevenlabs_price_conversions(self):
         # $0.30/1K chars → 0.0003 per char
-        assert UNIT_PRICING[("elevenlabs", "eleven_multilingual_v2")]["price_per_unit"] == 0.0003
+        assert UNIT_PRICING["elevenlabs"]["eleven_multilingual_v2"]["price_per_unit"] == 0.0003
         # $0.15/1K chars → 0.00015
-        assert UNIT_PRICING[("elevenlabs", "eleven_turbo_v2")]["price_per_unit"] == 0.00015
+        assert UNIT_PRICING["elevenlabs"]["eleven_turbo_v2"]["price_per_unit"] == 0.00015
         # $0.08/1K chars → 0.00008
-        assert UNIT_PRICING[("elevenlabs", "eleven_flash_v2")]["price_per_unit"] == 0.00008
+        assert UNIT_PRICING["elevenlabs"]["eleven_flash_v2"]["price_per_unit"] == 0.00008
 
     def test_deepgram_price_conversions(self):
         # $0.0043/min → 0.0000717/sec
-        assert UNIT_PRICING[("deepgram", "nova-2")]["price_per_unit"] == 0.0000717
+        assert UNIT_PRICING["deepgram"]["nova-2"]["price_per_unit"] == 0.0000717
         # $0.0065/1K chars → 0.0000065/char
-        assert UNIT_PRICING[("deepgram", "aura-asteria-en")]["price_per_unit"] == 0.0000065
+        assert UNIT_PRICING["deepgram"]["aura-asteria-en"]["price_per_unit"] == 0.0000065
 
     def test_deepgram_aura_voices_complete(self):
         aura_voices = [
@@ -60,7 +62,7 @@ class TestUnitPricingStructure:
             "aura-orpheus-en", "aura-helios-en", "aura-zeus-en",
         ]
         for voice in aura_voices:
-            assert ("deepgram", voice) in UNIT_PRICING
+            assert voice in UNIT_PRICING["deepgram"]
 
 
 class TestComputeCostFlexible:

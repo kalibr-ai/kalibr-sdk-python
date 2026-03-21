@@ -134,7 +134,7 @@ result = tts_router.synthesize("Hello!", voice="alloy")
 
 # STT routing
 stt_router = Router(goal="transcribe", paths=["whisper-1"])
-result = stt_router.transcribe(audio_bytes, audio_duration_minutes=2.0)
+result = stt_router.transcribe(audio_bytes, audio_duration_seconds=120.0)
 # result.text, result.cost_usd, result.kalibr_trace_id
 ```
 
@@ -238,7 +238,7 @@ result = router.transcribe(
     audio: Any,                        # audio file, bytes, or file-like object
     language: str = None,              # language hint
     model: str = None,                 # override model (e.g. "whisper-1", "nova-2")
-    audio_duration_minutes: float = 0, # for cost calculation
+    audio_duration_seconds: float = 0, # for cost calculation
     **kwargs                           # passed to provider
 )
 # result.text — transcribed text
