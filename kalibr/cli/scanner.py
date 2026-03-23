@@ -13,12 +13,98 @@ class LLMCallMatch:
 
     file_path: str
     line_number: int
-    pattern_type: str  # openai, anthropic, langchain, crewai, openai_agents
+    pattern_type: str  # openai, anthropic, langchain, crewai, openai_agents, huggingface, huggingface_pipeline
     matched_text: str
     context_before: list[str] = field(default_factory=list)
     context_after: list[str] = field(default_factory=list)
     inferred_goal: str = "llm_task"
+    inferred_task: str = ""  # HuggingFace task type (e.g. "automatic_speech_recognition")
 
+
+# Exact 17 methods patched by huggingface_instr.py — must stay in sync with PATCHED_METHODS
+HF_INFERENCE_TASKS = {
+    "chat_completion",
+    "text_generation",
+    "automatic_speech_recognition",
+    "text_to_speech",
+    "text_to_image",
+    "feature_extraction",
+    "text_classification",
+    "translation",
+    "summarization",
+    "token_classification",
+    "fill_mask",
+    "audio_classification",
+    "image_to_text",
+    "image_classification",
+    "image_segmentation",
+    "object_detection",
+    "table_question_answering",
+}
+
+# Default multi-provider paths to suggest per HF task type
+HF_TASK_DEFAULT_PATHS = {
+    "automatic_speech_recognition": [
+        '{"model": "openai/whisper-large-v3"}',
+        '{"model": "facebook/wav2vec2-large-960h"}',
+    ],
+    "text_to_image": [
+        '{"model": "black-forest-labs/FLUX.1-schnell"}',
+        '{"model": "stabilityai/stable-diffusion-xl-base-1.0"}',
+    ],
+    "text_to_speech": [
+        '{"model": "suno/bark"}',
+        '{"model": "facebook/mms-tts-eng"}',
+    ],
+    "translation": [
+        '{"model": "Helsinki-NLP/opus-mt-en-fr"}',
+        '{"model": "facebook/nllb-200-distilled-600M"}',
+    ],
+    "summarization": [
+        '{"model": "facebook/bart-large-cnn"}',
+        '{"model": "google/pegasus-xsum"}',
+    ],
+    "text_classification": [
+        '{"model": "distilbert-base-uncased-finetuned-sst-2-english"}',
+        '{"model": "cardiffnlp/twitter-roberta-base-sentiment"}',
+    ],
+    "token_classification": [
+        '{"model": "dslim/bert-base-NER"}',
+        '{"model": "Jean-Baptiste/roberta-large-ner-english"}',
+    ],
+    "image_classification": [
+        '{"model": "google/vit-base-patch16-224"}',
+        '{"model": "microsoft/resnet-50"}',
+    ],
+    "image_to_text": [
+        '{"model": "Salesforce/blip-image-captioning-large"}',
+        '{"model": "nlpconnect/vit-gpt2-image-captioning"}',
+    ],
+    "object_detection": [
+        '{"model": "facebook/detr-resnet-50"}',
+        '{"model": "hustvl/yolos-small"}',
+    ],
+    "feature_extraction": [
+        '{"model": "sentence-transformers/all-MiniLM-L6-v2"}',
+        '{"model": "BAAI/bge-small-en-v1.5"}',
+    ],
+    "audio_classification": [
+        '{"model": "superb/wav2vec2-base-superb-ks"}',
+        '{"model": "MIT/ast-finetuned-audioset-10-10-0.4593"}',
+    ],
+    "image_segmentation": [
+        '{"model": "facebook/mask2former-swin-large-coco-panoptic"}',
+        '{"model": "nvidia/segformer-b0-finetuned-ade-512-512"}',
+    ],
+    "fill_mask": [
+        '{"model": "bert-base-uncased"}',
+        '{"model": "roberta-base"}',
+    ],
+    "table_question_answering": [
+        '{"model": "google/tapas-base-finetuned-wtq"}',
+        '{"model": "microsoft/tapex-large-finetuned-wtq"}',
+    ],
+}
 
 # Detection patterns: (regex, pattern_type, description)
 DETECTION_PATTERNS = [
@@ -46,6 +132,18 @@ DETECTION_PATTERNS = [
         re.compile(r"""Runner\.run\("""),
         "openai_agents",
         "OpenAI Agents SDK Runner",
+    ),
+    (
+        # Matches: client.automatic_speech_recognition( or client.chat_completion( etc.
+        re.compile(r"""(?:^|[^\w.])(\w+)\.(%s)\(""" % "|".join(sorted(HF_INFERENCE_TASKS))),
+        "huggingface",
+        "HuggingFace InferenceClient task",
+    ),
+    (
+        # Matches: pipeline("text-classification") or pipeline('automatic-speech-recognition', ...)
+        re.compile(r"""pipeline\(\s*['"]([a-z][a-z0-9-]+)['"]\s*"""),
+        "huggingface_pipeline",
+        "HuggingFace pipeline()",
     ),
 ]
 
@@ -110,6 +208,19 @@ def _infer_goal(file_path: str, line_number: int, lines: list[str]) -> str:
     return "llm_task"
 
 
+def _infer_hf_task(line: str, pattern_type: str) -> str:
+    """Extract HuggingFace task type from matched line."""
+    if pattern_type == "huggingface":
+        m = re.search(r"""\.(%s)\(""" % "|".join(sorted(HF_INFERENCE_TASKS)), line)
+        if m:
+            return m.group(1)
+    elif pattern_type == "huggingface_pipeline":
+        m = re.search(r"""pipeline\(\s*['"]([a-z][a-z0-9-]+)['"]""", line)
+        if m:
+            return m.group(1).replace("-", "_")
+    return ""
+
+
 def _is_langchain_invoke(lines: list[str], line_number: int) -> bool:
     """Check if an .invoke() call is likely a LangChain call (llm or chain)."""
     line = lines[line_number] if line_number < len(lines) else ""
@@ -145,6 +256,7 @@ def scan_file(file_path: str) -> list[LLMCallMatch]:
                 context_after = lines[line_idx + 1 : end]
 
                 goal = _infer_goal(file_path, line_idx, lines)
+                inferred_task = _infer_hf_task(line, pattern_type)
 
                 match = LLMCallMatch(
                     file_path=file_path,
@@ -154,6 +266,7 @@ def scan_file(file_path: str) -> list[LLMCallMatch]:
                     context_before=context_before,
                     context_after=context_after,
                     inferred_goal=goal,
+                    inferred_task=inferred_task,
                 )
                 matches.append(match)
                 break  # Only match one pattern per line
