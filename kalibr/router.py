@@ -421,18 +421,31 @@ class Router:
 
         client = InferenceClient()
 
-        # Map task names to InferenceClient methods
+        # Map task names to InferenceClient methods.
+        # Must stay in sync with PATCHED_METHODS in huggingface_instr.py (all 17).
         task_method_map = {
-            "automatic_speech_recognition": client.automatic_speech_recognition,
-            "text_to_image": client.text_to_image,
-            "image_to_text": client.image_to_text,
-            "text_to_speech": client.text_to_speech,
+            # Text
+            "chat_completion": client.chat_completion,
+            "text_generation": client.text_generation,
             "translation": client.translation,
             "summarization": client.summarization,
-            "text_classification": client.text_classification,
+            "fill_mask": client.fill_mask,
+            "table_question_answering": client.table_question_answering,
+            # Audio
+            "automatic_speech_recognition": client.automatic_speech_recognition,
+            "text_to_speech": client.text_to_speech,
+            "audio_classification": client.audio_classification,
+            # Image
+            "text_to_image": client.text_to_image,
+            "image_to_text": client.image_to_text,
             "image_classification": client.image_classification,
+            "image_segmentation": client.image_segmentation,
             "object_detection": client.object_detection,
+            # Embedding
             "feature_extraction": client.feature_extraction,
+            # Classification
+            "text_classification": client.text_classification,
+            "token_classification": client.token_classification,
         }
 
         method = task_method_map.get(task)
