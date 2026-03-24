@@ -8,7 +8,7 @@ Open source SDK. Hosted optimization intelligence.
 
 * **Outcome-aware routing** — Routes each goal to the model+tool path that is actually succeeding in production
 * **Continuous optimization** — Learns from real outcomes using Thompson Sampling. Adapts as models degrade, tools fail, or costs shift
-* **Auto-instrumentation** — Traces OpenAI, Anthropic, and Google AI calls with zero code changes
+* **Auto-instrumentation** — Traces OpenAI, Anthropic, Google AI, and DeepSeek calls with zero code changes. DeepSeek spans and costs are attributed correctly without a separate instrumentor.
 * **TraceCapsule** — Cross-agent context propagation for multi-agent systems
 * **Cost & token tracking** — Real-time cost calculation and token monitoring across all providers
 * **Any model, any modality** — Text LLMs, voice, image, embeddings, classification, translation, anything on HuggingFace
@@ -78,6 +78,22 @@ router = Router(goal="product_image", paths=["stabilityai/stable-diffusion-xl-ba
 result = router.execute(task="text_to_image", input_data="a product photo")
 ```
 
+## DeepSeek
+
+DeepSeek models work out of the box — no separate SDK, no extra config beyond `DEEPSEEK_API_KEY`:
+
+```python
+from kalibr import Router
+
+router = Router(
+    goal="classify_icp",
+    paths=["deepseek-chat", "gpt-4o-mini", "claude-sonnet-4-20250514"],
+)
+response = router.completion(messages=[{"role": "user", "content": "Is this an ICP fit?"}])
+```
+
+Supported models: `deepseek-chat` (V3), `deepseek-reasoner` (R1), `deepseek-coder`. Kalibr attributes costs and spans correctly for each.
+
 `pip install kalibr`
 
 [![PyPI version](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
@@ -102,7 +118,10 @@ Get your credentials from [dashboard.kalibr.systems/settings](https://dashboard.
 ```bash
 export KALIBR_API_KEY=your-api-key
 export KALIBR_TENANT_ID=your-tenant-id
-export OPENAI_API_KEY=sk-...  # or ANTHROPIC_API_KEY for Claude models
+export OPENAI_API_KEY=sk-...           # OpenAI models
+export ANTHROPIC_API_KEY=sk-ant-...    # Anthropic / Claude models
+export DEEPSEEK_API_KEY=sk-...         # DeepSeek models (deepseek-chat, deepseek-reasoner)
+export HF_API_TOKEN=hf_...             # HuggingFace private models / rate-limit bypass
 ```
 
 Or use autonomous provisioning:
@@ -282,12 +301,18 @@ pip install kalibr[langchain-all]   # LangChain with all providers
 Kalibr auto-instruments OpenAI, Anthropic, Google, and HuggingFace SDKs on import (17 task types across every modality):
 
 ```python
-import kalibr  # Must be first import
+import kalibr  # Must be first import — patches OpenAI, Anthropic, Google, HuggingFace
 from openai import OpenAI
 
 client = OpenAI()
 response = client.chat.completions.create(model="gpt-4o", messages=[...])
-# Traced automatically — cost, latency, tokens, success all captured
+# Traced automatically — cost, latency, tokens captured
+
+# DeepSeek works automatically — same OpenAI SDK, detected by model prefix
+from openai import OpenAI
+deepseek = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+response = deepseek.chat.completions.create(model="deepseek-chat", messages=[...])
+# Span labeled deepseek.chat.completions.create, cost at DeepSeek rates
 ```
 
 Disable with `KALIBR_AUTO_INSTRUMENT=false`.
