@@ -60,6 +60,12 @@ MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
         "mistralai/mixtral-8x7b-instruct-v0.1": {"input": 0.60, "output": 0.60},
         # Default fallback for unknown HuggingFace models
     },
+    "deepseek": {
+        # Prices in USD per 1M tokens — https://platform.deepseek.com/docs/pricing
+        "deepseek-chat": {"input": 0.27, "output": 1.10},       # DeepSeek-V3
+        "deepseek-reasoner": {"input": 0.55, "output": 2.19},   # DeepSeek-R1
+        "deepseek-coder": {"input": 0.27, "output": 1.10},      # DeepSeek-Coder-V2
+    },
     "google": {
         # Gemini 2.5 models
         "gemini-2.5-pro": {"input": 1.25, "output": 5.00},
@@ -83,6 +89,7 @@ DEFAULT_PRICING: Dict[str, Dict[str, float]] = {
     "anthropic": {"input": 15.00, "output": 75.00},  # Claude 3 Opus pricing
     "google": {"input": 1.25, "output": 5.00},  # Gemini 1.5 Pro pricing
     "huggingface": {"input": 1.00, "output": 1.00},  # Conservative default
+    "deepseek": {"input": 0.55, "output": 2.19},    # DeepSeek-R1 pricing
 }
 
 
@@ -186,6 +193,15 @@ def normalize_model_name(vendor: str, model_name: str) -> str:
             return "gemini-1.5-pro"
         elif "gemini-1.0-pro" in model_lower or "gemini-pro" in model_lower:
             return "gemini-pro"
+
+    # DeepSeek fuzzy matching
+    elif vendor == "deepseek":
+        if "deepseek-reasoner" in model_lower or "deepseek-r1" in model_lower:
+            return "deepseek-reasoner"
+        elif "deepseek-coder" in model_lower:
+            return "deepseek-coder"
+        elif "deepseek-chat" in model_lower or "deepseek-v" in model_lower:
+            return "deepseek-chat"
 
     # Return original if no match found
     return model_lower
