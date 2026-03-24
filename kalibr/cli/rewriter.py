@@ -9,9 +9,10 @@ from kalibr.cli.scanner import LLMCallMatch, HF_TASK_DEFAULT_PATHS
 
 # Default multi-provider paths for LLM completion calls.
 # Always suggest at least two paths so Thompson Sampling has something to learn from.
+# Model IDs must be valid — verified against router.py docstring and examples.
 DEFAULT_LLM_PATHS = [
     '{"model": "gpt-4o-mini"}',
-    '{"model": "claude-haiku-3-5"}',
+    '{"model": "claude-sonnet-4-20250514"}',
 ]
 
 

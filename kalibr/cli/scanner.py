@@ -217,8 +217,31 @@ def _infer_hf_task(line: str, pattern_type: str) -> str:
     elif pattern_type == "huggingface_pipeline":
         m = re.search(r"""pipeline\(\s*['"]([a-z][a-z0-9-]+)['"]""", line)
         if m:
+            # Normalize hyphenated names (e.g. "text-classification" -> "text_classification")
             return m.group(1).replace("-", "_")
     return ""
+
+
+# Variable name fragments that suggest HuggingFace InferenceClient usage.
+# Filters out false positives from sklearn, custom APIs, etc. that happen
+# to have methods with the same names as HF tasks.
+_HF_VAR_INDICATORS = {
+    "client", "hf", "hugging", "inference", "hub", "model",
+    "pipe", "pipeline", "infer",
+}
+
+
+def _is_hf_inference_call(line: str) -> bool:
+    """Return True only if the variable looks like an HuggingFace InferenceClient.
+
+    Prevents false positives on sklearn_model.text_classification() or
+    my_api.translation() matching the HF detection pattern.
+    """
+    m = re.search(r"""(\w+)\.(?:%s)\(""" % "|".join(sorted(HF_INFERENCE_TASKS)), line)
+    if not m:
+        return False
+    var_name = m.group(1).lower()
+    return any(indicator in var_name for indicator in _HF_VAR_INDICATORS)
 
 
 def _is_langchain_invoke(lines: list[str], line_number: int) -> bool:
@@ -248,6 +271,19 @@ def scan_file(file_path: str) -> list[LLMCallMatch]:
                 # For langchain .invoke(), verify it's actually a chain/llm
                 if pattern_type == "langchain" and not _is_langchain_invoke(lines, line_idx):
                     continue
+
+                # For HF InferenceClient calls, verify the variable name looks like
+                # an InferenceClient (not sklearn, custom API, etc.)
+                if pattern_type == "huggingface" and not _is_hf_inference_call(line):
+                    continue
+
+                # For HF pipeline(), validate the task string is a known HF task.
+                # Prevents pipeline("data-processing") generating router.execute()
+                # calls that crash at runtime.
+                if pattern_type == "huggingface_pipeline":
+                    task_str = _infer_hf_task(line, "huggingface_pipeline")
+                    if task_str not in HF_INFERENCE_TASKS:
+                        continue
 
                 # Gather context lines
                 start = max(0, line_idx - 1)
