@@ -672,6 +672,8 @@ class Router:
             return self._call_anthropic(model_id, messages, tools, **kwargs)
         elif model_id.startswith(("gemini-", "models/gemini")):
             return self._call_google(model_id, messages, tools, **kwargs)
+        elif model_id.startswith("deepseek-"):
+            return self._call_deepseek(model_id, messages, tools, **kwargs)
         elif "/" in model_id and not model_id.startswith(("models/", "ft:")):
             # org/model format = HuggingFace
             return self._call_huggingface(model_id, messages, tools, **kwargs)
@@ -693,6 +695,28 @@ class Router:
         # Note: tools parameter from path config is for Kalibr routing only.
         # Users can pass actual tool definitions via **kwargs if needed.
 
+        return client.chat.completions.create(**call_kwargs)
+
+    def _call_deepseek(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
+        """Call DeepSeek API using OpenAI-compatible client with DeepSeek base URL."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("Install 'openai' package: pip install openai")
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "DEEPSEEK_API_KEY environment variable not set.\n"
+                "Get your API key from: https://platform.deepseek.com"
+            )
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+        )
+
+        call_kwargs = {"model": model, "messages": messages, **kwargs}
         return client.chat.completions.create(**call_kwargs)
 
     def _call_anthropic(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
@@ -756,7 +780,8 @@ class Router:
         except ImportError:
             raise ImportError("Install 'huggingface_hub' package: pip install huggingface_hub")
 
-        client = InferenceClient()
+        token = os.environ.get("HF_API_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        client = InferenceClient(token=token)
 
         call_kwargs = {"model": model, "messages": messages, **kwargs}
 
