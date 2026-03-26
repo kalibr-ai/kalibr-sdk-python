@@ -58,6 +58,21 @@ response = router.completion(
 )
 ```
 
+## Coding Agent Setup
+
+If you're using Claude Code, Cursor, Windsurf, or any coding agent to build with Kalibr, add the appropriate context file to your project so the agent generates Router-based code by default.
+
+**Claude Code / Codex / OpenClaw:**
+Copy [templates/CLAUDE.md](templates/CLAUDE.md) to your project root as `CLAUDE.md`
+
+**Cursor / Windsurf:**
+Copy [templates/.cursorrules](templates/.cursorrules) to your project root as `.cursorrules`
+
+Once added, your coding agent will automatically:
+- Use `Router` instead of raw LLM clients
+- Always put `import kalibr` first
+- Include outcome reporting in every agent it builds
+
 ## Multimodal Routing
 
 Route any ML task, not just text LLMs:
