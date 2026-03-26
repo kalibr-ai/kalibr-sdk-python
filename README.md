@@ -58,6 +58,23 @@ response = router.completion(
 )
 ```
 
+## Agent Starter Template
+
+Need a production-ready agent scaffold with Kalibr already wired in?
+
+**[kalibr-ai/agent-starter](https://github.com/kalibr-ai/agent-starter)** — clone and ship.
+
+```bash
+git clone https://github.com/kalibr-ai/agent-starter.git my-agent
+cd my-agent
+cp .env.example .env  # fill in your keys
+pip install -r requirements.txt
+python agent.py
+```
+
+Includes  with Router wired in,  and  for coding agents, , and . Routes between  and  out of the box.
+
+
 ## Multimodal Routing
 
 Route any ML task, not just text LLMs:
