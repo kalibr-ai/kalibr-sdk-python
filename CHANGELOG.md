@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multimodal trace schema** — TraceEvent supports audio_duration_ms, audio_format, image_count, image_resolution, modality, task_type, unit_type
 - **FlexibleCostAdapter** — Base class for cost adapters across any billing unit
 - **14 intelligence task types**: transcribe, synthesize, image_gen, image_classify, embed, translate (new) + code, summarize, classify, generate, extract, qa, chat, general (existing)
+- **Voice SDK Auto-Instrumentation** — ElevenLabs (`generate()` sync/async), Deepgram (`transcribe_file/url` sync/async), OpenAI Audio (`Speech.create` TTS + `Transcriptions.create` STT). Opt-in via `auto_instrument(["elevenlabs", "deepgram"])`
+- **Router voice methods** — `router.synthesize(text, voice=...)` for TTS, `router.transcribe(audio, ...)` for STT. Auto-detects vendor from model prefix
+- **`kalibr_voice` framework package** — `KalibrLiveKitInstrumentor` for LiveKit Agent pipelines, `KalibrPipecatInstrumentor` for Pipecat processors
+- **Optional dependencies** — `kalibr[elevenlabs]`, `kalibr[deepgram]`, `kalibr[voice]`, `kalibr[livekit]`, `kalibr[pipecat]`
 
 ### Fixed
 

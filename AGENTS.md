@@ -288,6 +288,31 @@ from kalibr_openai_agents import setup_kalibr_tracing
 setup_kalibr_tracing(tenant_id="...")
 ```
 
+### Voice AI (ElevenLabs, Deepgram, OpenAI TTS/Whisper)
+```python
+from kalibr import Router, auto_instrument
+
+# Auto-instrument voice SDKs (opt-in, not in default list)
+auto_instrument(["openai", "elevenlabs", "deepgram"])
+
+# TTS routing — same outcome learning as text
+tts_router = Router(goal="narrate", paths=["tts-1", "eleven_multilingual_v2"])
+result = tts_router.synthesize("Hello!", voice="alloy")
+# result.audio, result.cost_usd, result.kalibr_trace_id
+
+# STT routing
+stt_router = Router(goal="transcribe", paths=["whisper-1"])
+result = stt_router.transcribe(audio_bytes, audio_duration_seconds=120.0)
+# result.text, result.cost_usd, result.kalibr_trace_id
+```
+
+### Voice agent frameworks
+```python
+from kalibr_voice import KalibrLiveKitInstrumentor, KalibrPipecatInstrumentor
+KalibrLiveKitInstrumentor().instrument()   # LiveKit Agents pipeline
+KalibrPipecatInstrumentor().instrument()   # Pipecat processors
+```
+
 ### HuggingFace
 ```python
 import kalibr  # instruments InferenceClient automatically
