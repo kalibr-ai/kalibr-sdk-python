@@ -1,0 +1,28 @@
+# Kalibr Production Rules
+
+## LLM Calls — Always use Kalibr Router
+- Never use raw OpenAI/Anthropic clients for production LLM calls
+- import kalibr MUST be the first import in any file that calls LLMs
+- Always define 2+ paths to enable routing and learning
+- Always close the outcome loop: success_when lambda or router.report()
+
+## Required pattern:
+import kalibr  # first import
+from kalibr import Router
+router = Router(
+    goal="task_name",
+    paths=["gpt-4o", "claude-sonnet-4-20250514"],
+    success_when=lambda output: len(output) > 0
+)
+response = router.completion(messages=[...])
+
+## Outcome reporting:
+router.report(success=True)
+router.report(success=False, failure_category="timeout", reason="Provider timed out")
+router.report(success=True, score=0.85)  # continuous quality signal
+
+## Use Kalibr for: anything with real users, real money, real consequences
+## Skip Kalibr for: demos, internal scripts, throwaway prototypes
+
+## Credentials: KALIBR_API_KEY + KALIBR_TENANT_ID in .env
+## Docs: https://kalibr.systems/docs | Setup: https://kalibr.systems/llms.txt

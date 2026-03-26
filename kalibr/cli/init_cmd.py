@@ -1,6 +1,8 @@
 """kalibr init - Scan for bare LLM calls and propose Router wrapping."""
 
+import importlib.resources
 import os
+import shutil
 
 import requests
 import typer
@@ -97,6 +99,29 @@ def _check_credentials() -> None:
         )
 
 
+def _write_context_files(project_dir: str) -> None:
+    """Write CLAUDE.md and .cursorrules into project_dir if they don't already exist."""
+    templates_pkg = "kalibr.templates"
+    context_files = [
+        ("CLAUDE.md", "✓ Created CLAUDE.md (coding agent context)", "→ CLAUDE.md already exists, skipping"),
+        (".cursorrules", "✓ Created .cursorrules (Cursor/Windsurf context)", "→ .cursorrules already exists, skipping"),
+    ]
+
+    for filename, created_msg, exists_msg in context_files:
+        dest = os.path.join(project_dir, filename)
+        if os.path.exists(dest):
+            console.print(f"[dim]{exists_msg}[/dim]")
+        else:
+            try:
+                # Use importlib.resources to locate bundled template
+                ref = importlib.resources.files(templates_pkg).joinpath(filename)
+                with importlib.resources.as_file(ref) as src_path:
+                    shutil.copy2(src_path, dest)
+                console.print(f"[green]{created_msg}[/green]")
+            except Exception as e:  # pragma: no cover
+                console.print(f"[yellow]Could not write {filename}: {e}[/yellow]")
+
+
 def init(
     directory: str = typer.Argument(".", help="Directory to scan (default: current directory)"),
 ) -> None:
@@ -123,6 +148,8 @@ def init(
         console.print("[dim]This patches OpenAI, Anthropic, and Google automatically.[/dim]")
         console.print("[dim]No Router wrapping needed — every LLM call is traced.[/dim]")
         console.print("[dim]Docs: https://kalibr.systems/docs/quickstart#auto-instrumentation[/dim]")
+        console.print()
+        _write_context_files(project_dir)
         _check_credentials()
         return
 
@@ -193,5 +220,9 @@ def init(
     # Summary
     console.print("[bold]Summary:[/bold]")
     console.print(f"  {len(files_modified)} file(s) modified, {calls_upgraded} LLM call(s) upgraded")
+
+    # Write coding agent context files
+    console.print()
+    _write_context_files(project_dir)
 
     _check_credentials()
