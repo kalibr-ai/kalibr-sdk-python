@@ -105,6 +105,9 @@ where = ["."]
 include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*", "kalibr_openai_agents*"]
 exclude = ["tests*", "examples*"]
 
+[tool.setuptools.package-data]
+"kalibr.templates" = ["CLAUDE.md", ".cursorrules"]
+
 [tool.black]
 line-length = 100
 target-version = ['py311']
