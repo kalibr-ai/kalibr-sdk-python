@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-03-26
+
+### Added
+
+- **kalibr init — HuggingFace support** ([#121](https://github.com/kalibr-ai/kalibr-sdk-python/pull/121))
+  - Scanner detects all 17 HuggingFace InferenceClient task methods and `pipeline()` calls
+  - Rewriter generates `router.execute(task=..., input_data=...)` for HF tasks — correct method, not `completion()`
+  - Task-appropriate default model pairs for all 17 task types
+  - `router.execute()` `task_method_map` expanded from 10 to 17 tasks (was missing: `chat_completion`, `text_generation`, `token_classification`, `fill_mask`, `audio_classification`, `image_segmentation`, `table_question_answering`)
+  - All scaffolded Routers now include 2 default paths (was 0 — defeats Thompson Sampling)
+  - `import kalibr` enforced as first line in all generated code
+
+- **HF token + DeepSeek provider** ([#123](https://github.com/kalibr-ai/kalibr-sdk-python/pull/123))
+  - `HF_API_TOKEN` / `HUGGING_FACE_HUB_TOKEN` passed to `InferenceClient`
+  - `deepseek-*` models recognized in `router._dispatch()` — no longer falls through to OpenAI
+
+- **DeepSeek pricing + vendor attribution** ([#124](https://github.com/kalibr-ai/kalibr-sdk-python/pull/124))
+  - `deepseek` vendor added to `pricing.py` (`deepseek-chat` $0.27/$1.10, `deepseek-reasoner` $0.55/$2.19, `deepseek-coder` $0.27/$1.10)
+  - `_detect_vendor()` in `openai_instr.py`: DeepSeek calls get correct span name (`deepseek.chat.completions.create`), `llm.vendor=deepseek`, and DeepSeek pricing — no separate instrumentor needed
+
 ## [1.7.0] - 2026-03-18
 
 ### Added
