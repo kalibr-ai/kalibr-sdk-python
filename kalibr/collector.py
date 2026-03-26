@@ -18,6 +18,7 @@ from typing import Optional
 
 import requests
 
+from kalibr.provision import resolve_credentials
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
@@ -109,8 +110,8 @@ class KalibrHTTPSpanExporter(SpanExporter):
             tenant_id: Tenant ID (default: from KALIBR_TENANT_ID env var)
         """
         self.url = url or os.getenv("KALIBR_COLLECTOR_URL", self.DEFAULT_URL)
-        self.api_key = api_key or os.getenv("KALIBR_API_KEY")
-        self.tenant_id = tenant_id or os.getenv("KALIBR_TENANT_ID", "default")
+        self.api_key, resolved_tenant = resolve_credentials(api_key, tenant_id)
+        self.tenant_id = resolved_tenant or "default"
         self.environment = os.getenv("KALIBR_ENVIRONMENT", "production")
 
     def export(self, spans) -> SpanExportResult:

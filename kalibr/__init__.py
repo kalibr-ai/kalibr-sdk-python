@@ -1,4 +1,4 @@
-"""Kalibr SDK v1.5.0 - LLM Observability & Tracing Framework
+"""Kalibr SDK v1.7.0 - LLM Observability & Tracing Framework
 
 Features:
 - **Auto-Instrumentation**: Zero-config tracing of OpenAI, Anthropic, Google SDK calls
@@ -36,7 +36,7 @@ CLI Usage:
     kalibr version                       # Show version
 """
 
-__version__ = "1.5.0"
+__version__ = "1.8.0"
 
 # Auto-instrument LLM SDKs on import (can be disabled via env var)
 import os
@@ -114,7 +114,7 @@ if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
 
     # Auto-instrument available SDKs
     try:
-        auto_instrument(["openai", "anthropic", "google"])
+        auto_instrument(["openai", "anthropic", "google", "openai_responses"])
     except Exception as e:
         print(f"⚠️  Failed to auto-instrument SDKs: {e}")
 

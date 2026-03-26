@@ -35,7 +35,7 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
 
     # Default to all providers if none specified
     if providers is None:
-        providers = ["openai", "anthropic", "google"]
+        providers = ["openai", "anthropic", "google", "openai_responses", "huggingface"]
 
     results = {}
 
@@ -79,6 +79,11 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
                         _instrumented_providers.add(provider_lower)
                     print(f"✅ Instrumented Google Generative AI SDK")
 
+            elif provider_lower == "openai_responses":
+                from . import openai_responses_instr
+
+                success = openai_responses_instr.instrument()
+
             elif provider_lower == "elevenlabs":
                 from . import elevenlabs_instr
 
@@ -87,20 +92,25 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
                 if success:
                     with _registry_lock:
                         _instrumented_providers.add(provider_lower)
-                    print(f"\u2705 Instrumented ElevenLabs SDK")
+                    print(f"✅ Instrumented ElevenLabs SDK")
 
             elif provider_lower == "deepgram":
                 from . import deepgram_instr
 
                 success = deepgram_instr.instrument()
+
+            elif provider_lower == "huggingface":
+                from . import huggingface_instr
+
+                success = huggingface_instr.instrument()
                 results[provider_lower] = success
                 if success:
                     with _registry_lock:
                         _instrumented_providers.add(provider_lower)
-                    print(f"\u2705 Instrumented Deepgram SDK")
+                    print(f"✅ Instrumented Deepgram SDK")
 
             else:
-                print(f"\u26a0\ufe0f  Unknown provider: {provider}")
+                print(f"⚠️  Unknown provider: {provider}")
                 results[provider_lower] = False
 
         except ImportError as e:
@@ -160,7 +170,7 @@ def uninstrument_all() -> Dict[str, bool]:
                 if success:
                     with _registry_lock:
                         _instrumented_providers.discard(provider)
-                    print(f"\u2705 Uninstrumented Google Generative AI SDK")
+                    print(f"✅ Uninstrumented Google Generative AI SDK")
 
             elif provider == "elevenlabs":
                 from . import elevenlabs_instr
@@ -170,7 +180,7 @@ def uninstrument_all() -> Dict[str, bool]:
                 if success:
                     with _registry_lock:
                         _instrumented_providers.discard(provider)
-                    print(f"\u2705 Uninstrumented ElevenLabs SDK")
+                    print(f"✅ Uninstrumented ElevenLabs SDK")
 
             elif provider == "deepgram":
                 from . import deepgram_instr
@@ -180,7 +190,27 @@ def uninstrument_all() -> Dict[str, bool]:
                 if success:
                     with _registry_lock:
                         _instrumented_providers.discard(provider)
-                    print(f"\u2705 Uninstrumented Deepgram SDK")
+                    print(f"✅ Uninstrumented Deepgram SDK")
+
+            elif provider == "openai_responses":
+                from . import openai_responses_instr
+
+                success = openai_responses_instr.uninstrument()
+                results[provider] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.discard(provider)
+                    print(f"✅ Uninstrumented OpenAI Responses API")
+
+            elif provider == "huggingface":
+                from . import huggingface_instr
+
+                success = huggingface_instr.uninstrument()
+                results[provider] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.discard(provider)
+                    print(f"✅ Uninstrumented HuggingFace SDK")
 
         except Exception as e:
             print(f"❌ Failed to uninstrument {provider}: {e}")

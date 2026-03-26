@@ -48,6 +48,24 @@ MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
         "claude-2.0": {"input": 8.00, "output": 24.00},
         "claude-instant-1.2": {"input": 0.80, "output": 2.40},
     },
+    "huggingface": {
+        # Meta Llama models (HuggingFace Inference API pricing)
+        "meta-llama/llama-3-70b-instruct": {"input": 0.90, "output": 0.90},
+        "meta-llama/llama-3-8b-instruct": {"input": 0.20, "output": 0.20},
+        "meta-llama/llama-3.1-405b-instruct": {"input": 5.00, "output": 15.00},
+        "meta-llama/llama-3.1-70b-instruct": {"input": 0.90, "output": 0.90},
+        "meta-llama/llama-3.1-8b-instruct": {"input": 0.20, "output": 0.20},
+        # Mistral models
+        "mistralai/mistral-7b-instruct-v0.3": {"input": 0.20, "output": 0.20},
+        "mistralai/mixtral-8x7b-instruct-v0.1": {"input": 0.60, "output": 0.60},
+        # Default fallback for unknown HuggingFace models
+    },
+    "deepseek": {
+        # Prices in USD per 1M tokens — https://platform.deepseek.com/docs/pricing
+        "deepseek-chat": {"input": 0.27, "output": 1.10},       # DeepSeek-V3
+        "deepseek-reasoner": {"input": 0.55, "output": 2.19},   # DeepSeek-R1
+        "deepseek-coder": {"input": 0.27, "output": 1.10},      # DeepSeek-Coder-V2
+    },
     "google": {
         # Gemini 2.5 models
         "gemini-2.5-pro": {"input": 1.25, "output": 5.00},
@@ -70,6 +88,8 @@ DEFAULT_PRICING: Dict[str, Dict[str, float]] = {
     "openai": {"input": 30.00, "output": 60.00},  # GPT-4 pricing
     "anthropic": {"input": 15.00, "output": 75.00},  # Claude 3 Opus pricing
     "google": {"input": 1.25, "output": 5.00},  # Gemini 1.5 Pro pricing
+    "huggingface": {"input": 1.00, "output": 1.00},  # Conservative default
+    "deepseek": {"input": 0.55, "output": 2.19},    # DeepSeek-R1 pricing
 }
 
 
@@ -174,6 +194,15 @@ def normalize_model_name(vendor: str, model_name: str) -> str:
         elif "gemini-1.0-pro" in model_lower or "gemini-pro" in model_lower:
             return "gemini-pro"
 
+    # DeepSeek fuzzy matching
+    elif vendor == "deepseek":
+        if "deepseek-reasoner" in model_lower or "deepseek-r1" in model_lower:
+            return "deepseek-reasoner"
+        elif "deepseek-coder" in model_lower:
+            return "deepseek-coder"
+        elif "deepseek-chat" in model_lower or "deepseek-v" in model_lower:
+            return "deepseek-chat"
+
     # Return original if no match found
     return model_lower
 
@@ -244,14 +273,17 @@ def compute_cost(
     return round(input_cost + output_cost, 6)
 
 
-# ============================================================================
+# ==============================================================================
 # UNIT PRICING — Flexible pricing for any billing unit
-# ============================================================================
-# All prices are per single unit (one character, one second, one image, etc.)
-# Structured as nested dicts: vendor → model → {"unit": ..., "price_per_unit": ...}
+# ==============================================================================
 UNIT_PRICING: Dict[str, Dict[str, Dict[str, Any]]] = {
+    "huggingface": {
+        "openai/whisper-large-v3": {"unit": "audio_seconds", "price_per_unit": 0.0001},
+        "facebook/seamless-m4t-v2-large": {"unit": "audio_seconds", "price_per_unit": 0.0002},
+        "stabilityai/stable-diffusion-xl-base-1.0": {"unit": "images", "price_per_unit": 0.002},
+        "sentence-transformers/all-minilm-l6-v2": {"unit": "tokens", "price_per_unit_1m": 0.03},
+    },
     "elevenlabs": {
-        # TTS (per character)
         "eleven_multilingual_v2": {"unit": "characters", "price_per_unit": 0.0003},
         "eleven_multilingual_v1": {"unit": "characters", "price_per_unit": 0.0003},
         "eleven_monolingual_v1": {"unit": "characters", "price_per_unit": 0.0003},
@@ -261,14 +293,11 @@ UNIT_PRICING: Dict[str, Dict[str, Dict[str, Any]]] = {
         "eleven_flash_v2_5": {"unit": "characters", "price_per_unit": 0.00008},
     },
     "openai": {
-        # TTS (per character)
         "tts-1": {"unit": "characters", "price_per_unit": 0.000015},
         "tts-1-hd": {"unit": "characters", "price_per_unit": 0.00003},
-        # STT (per second)
         "whisper-1": {"unit": "audio_seconds", "price_per_unit": 0.0001},
     },
     "deepgram": {
-        # STT (per second)
         "nova-2": {"unit": "audio_seconds", "price_per_unit": 0.0000717},
         "nova-2-general": {"unit": "audio_seconds", "price_per_unit": 0.0000717},
         "nova-2-meeting": {"unit": "audio_seconds", "price_per_unit": 0.0000717},
@@ -276,7 +305,8 @@ UNIT_PRICING: Dict[str, Dict[str, Dict[str, Any]]] = {
         "nova": {"unit": "audio_seconds", "price_per_unit": 0.0000717},
         "enhanced": {"unit": "audio_seconds", "price_per_unit": 0.0002417},
         "base": {"unit": "audio_seconds", "price_per_unit": 0.0002083},
-        # TTS — Aura voices (per character)
+        "nova-2-medical": {"unit": "audio_seconds", "price_per_unit": 0.0001167},
+        "whisper-large": {"unit": "audio_seconds", "price_per_unit": 0.00008},
         "aura-asteria-en": {"unit": "characters", "price_per_unit": 0.0000065},
         "aura-luna-en": {"unit": "characters", "price_per_unit": 0.0000065},
         "aura-stella-en": {"unit": "characters", "price_per_unit": 0.0000065},
@@ -293,30 +323,60 @@ UNIT_PRICING: Dict[str, Dict[str, Dict[str, Any]]] = {
 }
 
 
+def get_unit_type(vendor: str, model: str) -> str:
+    """Return the billing unit for a vendor/model pair."""
+    vendor = vendor.lower()
+    model_lower = model.lower()
+    vendor_models = UNIT_PRICING.get(vendor, {})
+    model_info = vendor_models.get(model_lower)
+    if model_info is not None:
+        return model_info["unit"]
+    return "tokens"
+
+
+def compute_cost_flexible(
 def compute_cost_flexible(
     vendor: str, model: str, usage_metrics: Dict[str, Any]
 ) -> float:
-    """Compute cost for any billing unit type.
+    """Compute cost for any model type — tokens, audio, images, etc.
 
     Args:
-        vendor: Vendor name (e.g., "elevenlabs", "openai", "deepgram")
+        vendor: Vendor name
         model: Model identifier
-        usage_metrics: Dict mapping unit type to quantity,
-                       e.g. {"characters": 3000} or {"audio_seconds": 120}
+        usage_metrics: Dict with task-appropriate keys (input_tokens, output_tokens,
+                       audio_seconds, characters, image_count, etc.)
 
     Returns:
         Cost in USD (rounded to 6 decimal places)
     """
-    vendor = vendor.lower()
-    model = model.lower()
+    vendor_lower = vendor.lower()
+    model_lower = model.lower()
+    vendor_models = UNIT_PRICING.get(vendor_lower, {})
+    model_info = vendor_models.get(model_lower)
 
-    pricing = UNIT_PRICING.get(vendor, {}).get(model)
-    if pricing is None:
-        return 0.0
+    if model_info is not None:
+        unit = model_info["unit"]
 
-    unit = pricing["unit"]
-    price_per_unit = pricing["price_per_unit"]
+        if unit == "tokens":
+            price_per_1m = model_info["price_per_unit_1m"]
+            total_tokens = usage_metrics.get("input_tokens", 0) + usage_metrics.get("output_tokens", 0)
+            return round((total_tokens / 1_000_000) * price_per_1m, 6)
 
-    quantity = usage_metrics.get(unit, 0)
-    return round(price_per_unit * quantity, 6)
+        price = model_info["price_per_unit"]
+
+        if unit == "audio_seconds":
+            quantity = usage_metrics.get("audio_seconds", 0)
+        elif unit == "characters":
+            quantity = usage_metrics.get("characters", 0)
+        elif unit == "images":
+            quantity = usage_metrics.get("image_count", 0)
+        else:
+            quantity = usage_metrics.get(unit, 0)
+
+        return round(quantity * price, 6)
+
+    # Fall back to token-based pricing
+    input_tokens = usage_metrics.get("input_tokens", 0)
+    output_tokens = usage_metrics.get("output_tokens", 0)
+    return compute_cost(vendor, model, input_tokens, output_tokens)
 

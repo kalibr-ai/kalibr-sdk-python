@@ -8,8 +8,11 @@ import pytest
 from kalibr.pricing import (
     MODEL_PRICING,
     PRICING_VERSION,
+    UNIT_PRICING,
     compute_cost,
+    compute_cost_flexible,
     get_pricing,
+    get_unit_type,
     normalize_model_name,
 )
 
@@ -265,4 +268,130 @@ class TestConsistency:
         cost1 = compute_cost("openai", "gpt-4o", 1000, 500)
         cost2 = compute_cost("OpenAI", "GPT-4O", 1000, 500)
         assert cost1 == cost2
+
+
+# ---------------------------------------------------------------------------
+# Tests for flexible (non-token) pricing system
+# ---------------------------------------------------------------------------
+
+
+class TestUnitPricing:
+    """Test UNIT_PRICING data structure"""
+
+    def test_unit_pricing_vendors_exist(self):
+        """Test that expected vendors are present"""
+        assert "elevenlabs" in UNIT_PRICING
+        assert "deepgram" in UNIT_PRICING
+        assert "huggingface" in UNIT_PRICING
+
+    def test_unit_pricing_structure(self):
+        """Each model entry must have 'unit' and a price key"""
+        for vendor, models in UNIT_PRICING.items():
+            for model_name, info in models.items():
+                assert "unit" in info, f"{vendor}/{model_name} missing 'unit'"
+                if info["unit"] == "tokens":
+                    assert "price_per_unit_1m" in info
+                else:
+                    assert "price_per_unit" in info
+
+
+class TestGetUnitType:
+    """Test get_unit_type()"""
+
+    def test_deepgram_audio(self):
+        assert get_unit_type("deepgram", "nova-2") == "audio_seconds"
+
+    def test_elevenlabs_characters(self):
+        assert get_unit_type("elevenlabs", "eleven_multilingual_v2") == "characters"
+
+    def test_huggingface_audio(self):
+        assert get_unit_type("huggingface", "openai/whisper-large-v3") == "audio_seconds"
+
+    def test_huggingface_images(self):
+        assert get_unit_type("huggingface", "stabilityai/stable-diffusion-xl-base-1.0") == "images"
+
+    def test_huggingface_tokens(self):
+        assert get_unit_type("huggingface", "sentence-transformers/all-MiniLM-L6-v2") == "tokens"
+
+    def test_unknown_model_defaults_to_tokens(self):
+        assert get_unit_type("openai", "gpt-4o") == "tokens"
+        assert get_unit_type("unknown", "unknown-model") == "tokens"
+
+    def test_case_insensitive(self):
+        assert get_unit_type("Deepgram", "Nova-2") == "audio_seconds"
+
+
+class TestComputeCostFlexible:
+    """Test compute_cost_flexible()"""
+
+    # -- Token-based delegation --
+
+    def test_delegates_to_token_pricing(self):
+        """Token-based models should produce the same cost as compute_cost()"""
+        cost_flex = compute_cost_flexible(
+            "openai", "gpt-4o", {"input_tokens": 1000, "output_tokens": 500}
+        )
+        cost_orig = compute_cost("openai", "gpt-4o", 1000, 500)
+        assert cost_flex == cost_orig
+
+    def test_delegates_anthropic(self):
+        cost_flex = compute_cost_flexible(
+            "anthropic", "claude-3-sonnet", {"input_tokens": 2000, "output_tokens": 1000}
+        )
+        cost_orig = compute_cost("anthropic", "claude-3-sonnet", 2000, 1000)
+        assert cost_flex == cost_orig
+
+    # -- Audio seconds --
+
+    def test_deepgram_audio_seconds(self):
+        cost = compute_cost_flexible(
+            "deepgram", "nova-2", {"audio_seconds": 60}
+        )
+        expected = round(60 * 0.0000717, 6)
+        assert cost == expected
+
+    def test_deepgram_zero_seconds(self):
+        cost = compute_cost_flexible("deepgram", "nova-2", {"audio_seconds": 0})
+        assert cost == 0.0
+
+    # -- Characters --
+
+    def test_elevenlabs_characters(self):
+        cost = compute_cost_flexible(
+            "elevenlabs", "eleven_multilingual_v2", {"characters": 10000}
+        )
+        expected = round(10000 * 0.0003, 6)
+        assert cost == expected
+
+    # -- Images --
+
+    def test_huggingface_images(self):
+        cost = compute_cost_flexible(
+            "huggingface",
+            "stabilityai/stable-diffusion-xl-base-1.0",
+            {"image_count": 4},
+        )
+        expected = round(4 * 0.002, 6)
+        assert cost == expected
+
+    # -- Embedding tokens via UNIT_PRICING --
+
+    def test_huggingface_embedding_tokens(self):
+        cost = compute_cost_flexible(
+            "huggingface",
+            "sentence-transformers/all-MiniLM-L6-v2",
+            {"input_tokens": 1_000_000},
+        )
+        expected = round(1_000_000 / 1_000_000 * 0.03, 6)
+        assert cost == expected
+
+    # -- Missing metrics default to zero --
+
+    def test_missing_metrics_zero_cost(self):
+        cost = compute_cost_flexible("deepgram", "nova-2", {})
+        assert cost == 0.0
+
+    def test_missing_token_metrics_zero_cost(self):
+        cost = compute_cost_flexible("openai", "gpt-4o", {})
+        assert cost == 0.0
 

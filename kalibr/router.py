@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from kalibr.provision import resolve_credentials
 from opentelemetry import trace as otel_trace
 from opentelemetry.trace import SpanContext, TraceFlags, NonRecordingSpan, set_span_in_context
 from opentelemetry.context import Context
@@ -49,16 +50,25 @@ class Router:
     """
     Routes LLM requests to the best model based on learned outcomes.
 
-    Example:
+    Three scoring modes (in priority order):
+    1. score_when: Continuous scoring (0.0-1.0). Best for quality optimization.
+       Example: score_when=lambda out: min(1.0, len(out) / 500)
+    2. success_when: Binary scoring (True/False). Good for pass/fail checks.
+       Example: success_when=lambda out: "@" in out
+    3. Default: When neither is provided, Kalibr auto-scores using heuristics
+       (response length, structure, finish reason). Gives day-one metrics
+       without any evaluation code.
+
+    Examples:
+        # Continuous scoring (best quality signal)
         router = Router(
             goal="summarize",
             paths=["gpt-4o", "claude-sonnet-4-20250514"],
-            success_when=lambda out: len(out) > 100
+            score_when=lambda out: min(1.0, len(out) / 500)
         )
         response = router.completion(messages=[...])
 
-    Examples:
-        # Simple auto-reporting
+        # Binary auto-reporting
         router = Router(
             goal="extract_email",
             paths=["gpt-4o", "claude-sonnet-4-20250514"],
@@ -66,6 +76,14 @@ class Router:
         )
         response = router.completion(messages=[...])
         # report() called automatically
+
+        # Zero-config (default heuristic scoring)
+        router = Router(
+            goal="chat",
+            paths=["gpt-4o", "claude-sonnet-4-20250514"]
+        )
+        response = router.completion(messages=[...])
+        # Auto-scored using heuristics - no evaluation code needed
 
         # Manual reporting for complex validation
         router = Router(
@@ -87,11 +105,21 @@ class Router:
         goal: str,
         paths: Optional[List[PathSpec]] = None,
         success_when: Optional[Callable[[str], bool]] = None,
+        score_when: Optional[Callable[[str], float]] = None,
         exploration_rate: Optional[float] = None,
         auto_register: bool = True,
     ):
         """
         Initialize router.
+
+        Three scoring modes (in priority order):
+        1. score_when: Continuous scoring (0.0-1.0). Best for quality optimization.
+           Example: score_when=lambda out: min(1.0, len(out) / 500)
+        2. success_when: Binary scoring (True/False). Good for pass/fail checks.
+           Example: success_when=lambda out: "@" in out
+        3. Default: When neither is provided, Kalibr auto-scores using heuristics
+           (response length, structure, finish reason). Gives day-one metrics
+           without any evaluation code.
 
         Args:
             goal: Name of the goal (e.g., "book_meeting", "summarize")
@@ -108,30 +136,33 @@ class Router:
                          Examples:
                              success_when=lambda out: len(out) > 0  # Not empty
                              success_when=lambda out: "@" in out     # Contains email
+            score_when: Optional function to auto-evaluate quality from LLM output.
+                       Takes the output string and returns a float (0.0-1.0).
+                       Takes priority over success_when if both are provided.
+                       Examples:
+                           score_when=lambda out: min(1.0, len(out) / 500)
             exploration_rate: Override exploration rate (0.0-1.0)
             auto_register: If True, register paths on init
         """
         self.goal = goal
 
-        # Validate required environment variables
-        api_key = os.environ.get('KALIBR_API_KEY')
-        tenant_id = os.environ.get('KALIBR_TENANT_ID')
+        # Validate required credentials
+        api_key, tenant_id = resolve_credentials()
 
         if not api_key:
             raise ValueError(
-                "KALIBR_API_KEY environment variable not set.\n"
-                "Get your API key from: https://dashboard.kalibr.systems/settings\n"
-                "Then run: export KALIBR_API_KEY=your-key-here"
+                "No API key found. Set KALIBR_API_KEY or KALIBR_PROVISIONING_TOKEN.\n"
+                "Get your API key from: https://dashboard.kalibr.systems/settings"
             )
 
         if not tenant_id:
             raise ValueError(
                 "KALIBR_TENANT_ID environment variable not set.\n"
-                "Find your Tenant ID at: https://dashboard.kalibr.systems/settings\n"
-                "Then run: export KALIBR_TENANT_ID=your-tenant-id"
+                "Find your Tenant ID at: https://dashboard.kalibr.systems/settings"
             )
 
         self.success_when = success_when
+        self.score_when = score_when
         self.exploration_rate = exploration_rate
         self._last_trace_id: Optional[str] = None
         self._last_model_id: Optional[str] = None
@@ -295,12 +326,24 @@ class Router:
                     # Success! Update state to reflect which model succeeded
                     self._last_model_id = candidate_model
 
-                    # Auto-report success if success_when provided
-                    if self.success_when and not self._outcome_reported:
+                    # Auto-report if any scoring mechanism is provided (or use defaults)
+                    if not self._outcome_reported:
                         try:
                             output = response.choices[0].message.content or ""
-                            success = self.success_when(output)
-                            self.report(success=success)
+
+                            if self.score_when:
+                                # Priority 1: User-provided continuous scorer
+                                score = self.score_when(output)
+                                score = min(1.0, max(0.0, float(score)))
+                                self.report(success=score >= 0.5, score=score)
+                            elif self.success_when:
+                                # Priority 2: User-provided binary scorer
+                                success = self.success_when(output)
+                                self.report(success=success)
+                            else:
+                                # Priority 3: Default heuristic scoring (zero-config)
+                                score = self._default_score(response)
+                                self.report(success=score >= 0.5, score=score)
                         except Exception as e:
                             logger.warning(f"Auto-outcome evaluation failed: {e}")
 
@@ -337,6 +380,214 @@ class Router:
 
     # Alias for common naming confusion
     complete = completion
+
+    def execute(self, task: str, input_data: Any, **kwargs) -> Any:
+        """Execute any ML task with intelligent routing.
+
+        Args:
+            task: HuggingFace task type ("automatic_speech_recognition", "text_to_image", etc.)
+            input_data: Task-appropriate input (audio bytes, text prompt, etc.)
+            **kwargs: Additional task-specific parameters
+
+        Returns:
+            Task-appropriate response (transcription text, PIL image, etc.)
+        """
+        from kalibr.intelligence import decide, report_outcome
+
+        # Reset state for new request
+        self._outcome_reported = False
+
+        # Step 1: Get routing decision
+        try:
+            decision = decide(goal=self.goal)
+            model_id = decision.get("model_id") or self._paths[0]["model"]
+            self._last_decision = decision
+        except Exception as e:
+            logger.warning(f"Routing failed, using fallback: {e}")
+            model_id = self._paths[0]["model"]
+            self._last_decision = {"model_id": model_id, "fallback": True, "error": str(e)}
+
+        # Step 2: Determine trace_id
+        decision_trace_id = self._last_decision.get("trace_id") if self._last_decision else None
+        trace_id = decision_trace_id or uuid.uuid4().hex
+        self._last_trace_id = trace_id
+        self._last_model_id = model_id
+
+        # Step 3: Execute the task via HuggingFace Inference API
+        try:
+            from huggingface_hub import InferenceClient
+        except ImportError:
+            raise ImportError("Install 'huggingface_hub' package: pip install huggingface_hub")
+
+        client = InferenceClient()
+
+        # Map task names to InferenceClient methods.
+        # Must stay in sync with PATCHED_METHODS in huggingface_instr.py (all 17).
+        task_method_map = {
+            # Text
+            "chat_completion": client.chat_completion,
+            "text_generation": client.text_generation,
+            "translation": client.translation,
+            "summarization": client.summarization,
+            "fill_mask": client.fill_mask,
+            "table_question_answering": client.table_question_answering,
+            # Audio
+            "automatic_speech_recognition": client.automatic_speech_recognition,
+            "text_to_speech": client.text_to_speech,
+            "audio_classification": client.audio_classification,
+            # Image
+            "text_to_image": client.text_to_image,
+            "image_to_text": client.image_to_text,
+            "image_classification": client.image_classification,
+            "image_segmentation": client.image_segmentation,
+            "object_detection": client.object_detection,
+            # Embedding
+            "feature_extraction": client.feature_extraction,
+            # Classification
+            "text_classification": client.text_classification,
+            "token_classification": client.token_classification,
+        }
+
+        method = task_method_map.get(task)
+        if method is None:
+            raise ValueError(
+                f"Unsupported task '{task}'. Supported tasks: {', '.join(sorted(task_method_map.keys()))}"
+            )
+
+        try:
+            response = method(input_data, model=model_id, **kwargs)
+        except Exception as e:
+            # Report failure
+            try:
+                report_outcome(
+                    trace_id=trace_id,
+                    goal=self.goal,
+                    success=False,
+                    failure_reason=f"provider_error: {type(e).__name__}",
+                    model_id=model_id,
+                )
+            except Exception:
+                pass
+            self._outcome_reported = True
+            raise
+
+        # Step 4: Score and report
+        if not self._outcome_reported:
+            try:
+                if self.score_when:
+                    score = self.score_when(response)
+                    score = min(1.0, max(0.0, float(score)))
+                    self.report(success=score >= 0.5, score=score)
+                elif self.success_when:
+                    success = self.success_when(response)
+                    self.report(success=success)
+                else:
+                    score = self._default_score(response)
+                    self.report(success=score >= 0.5, score=score)
+            except Exception as e:
+                logger.warning(f"Auto-outcome evaluation failed: {e}")
+
+        return response
+
+    def _default_score(self, response) -> float:
+        """
+        Compute a heuristic quality score from an LLM response.
+        Used when no success_when or score_when is provided.
+        Gives users day-one quality metrics without writing evaluation code.
+
+        Handles multiple response types:
+        - Chat completion (has .choices[0].message.content) -> text heuristics
+        - bytes (audio) -> 1.0 if non-empty
+        - Transcription (has .text attribute) -> text heuristics on .text
+        - PIL.Image -> 1.0 if not None
+        - Other -> 0.5 (neutral, let user-provided scorer handle it)
+
+        Signals for text scoring (all normalized to 0-1, then weighted average):
+        - non_empty: 1.0 if response has content, 0.0 if empty
+        - length_score: normalized response length (sigmoid around 200 chars)
+        - structure_score: bonus for JSON validity, markdown headers, bullet points
+        - finish_reason_score: 1.0 for "stop", 0.5 for "length" (truncated), 0.0 for error
+        """
+        # Handle bytes (e.g., audio output)
+        if isinstance(response, bytes):
+            return 1.0 if len(response) > 0 else 0.0
+
+        # Handle PIL.Image
+        try:
+            from PIL import Image
+            if isinstance(response, Image.Image):
+                return 1.0
+        except ImportError:
+            pass
+
+        # Handle transcription-style responses (has .text but no .choices)
+        if hasattr(response, "text") and not hasattr(response, "choices"):
+            content = response.text or ""
+            return self._score_text_content(content)
+
+        # Handle chat completion responses
+        try:
+            content = response.choices[0].message.content or ""
+        except (AttributeError, IndexError):
+            # Unknown response type - return neutral score
+            if response is None:
+                return 0.0
+            return 0.5
+
+        return self._score_text_content(content, response)
+
+    def _score_text_content(self, content: str, response: Any = None) -> float:
+        """Score text content using heuristics. Used by _default_score for text-based responses."""
+        # Signal 1: Non-empty (binary)
+        non_empty = 1.0 if len(content.strip()) > 0 else 0.0
+        if non_empty == 0.0:
+            return 0.0  # Empty response is always 0
+
+        # Signal 2: Response length (sigmoid - most responses 50-2000 chars)
+        import math
+        char_count = len(content)
+        # Sigmoid centered at 200 chars, gives ~0.5 at 200, ~0.95 at 1000
+        length_score = 1.0 / (1.0 + math.exp(-0.005 * (char_count - 200)))
+
+        # Signal 3: Structure (JSON, markdown, lists indicate structured output)
+        structure_score = 0.5  # baseline
+        content_stripped = content.strip()
+        # JSON detection
+        if (content_stripped.startswith('{') and content_stripped.endswith('}')) or \
+           (content_stripped.startswith('[') and content_stripped.endswith(']')):
+            try:
+                import json
+                json.loads(content_stripped)
+                structure_score = 1.0  # Valid JSON
+            except (json.JSONDecodeError, ValueError):
+                structure_score = 0.3  # Looks like JSON but invalid
+        # Markdown/list detection
+        elif any(marker in content for marker in ['## ', '- ', '* ', '1. ', '```']):
+            structure_score = 0.8
+
+        # Signal 4: Finish reason
+        finish_score = 0.5  # default when no response object
+        if response is not None:
+            try:
+                finish_reason = response.choices[0].finish_reason
+                if finish_reason == "stop":
+                    finish_score = 1.0
+                elif finish_reason == "length":
+                    finish_score = 0.5  # Truncated
+                else:
+                    finish_score = 0.3  # Unknown/error
+            except (AttributeError, IndexError):
+                finish_score = 0.5
+
+        # Weighted average
+        score = (
+            non_empty * 0.1 +
+            length_score * 0.3 +
+            structure_score * 0.3 +
+            finish_score * 0.3
+        )
+
+        return round(min(1.0, max(0.0, score)), 3)
 
     def report(
         self,
@@ -617,6 +868,11 @@ class Router:
             return self._call_anthropic(model_id, messages, tools, **kwargs)
         elif model_id.startswith(("gemini-", "models/gemini")):
             return self._call_google(model_id, messages, tools, **kwargs)
+        elif model_id.startswith("deepseek-"):
+            return self._call_deepseek(model_id, messages, tools, **kwargs)
+        elif "/" in model_id and not model_id.startswith(("models/", "ft:")):
+            # org/model format = HuggingFace
+            return self._call_huggingface(model_id, messages, tools, **kwargs)
         else:
             # Default to OpenAI-compatible
             logger.info(f"Unknown model prefix '{model_id}', trying OpenAI")
@@ -635,6 +891,28 @@ class Router:
         # Note: tools parameter from path config is for Kalibr routing only.
         # Users can pass actual tool definitions via **kwargs if needed.
 
+        return client.chat.completions.create(**call_kwargs)
+
+    def _call_deepseek(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
+        """Call DeepSeek API using OpenAI-compatible client with DeepSeek base URL."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("Install 'openai' package: pip install openai")
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "DEEPSEEK_API_KEY environment variable not set.\n"
+                "Get your API key from: https://platform.deepseek.com"
+            )
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com",
+        )
+
+        call_kwargs = {"model": model, "messages": messages, **kwargs}
         return client.chat.completions.create(**call_kwargs)
 
     def _call_anthropic(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
@@ -690,6 +968,51 @@ class Router:
 
         # Convert to OpenAI format
         return self._google_to_openai_response(response, model)
+
+    def _call_huggingface(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
+        """Call HuggingFace Inference API and convert response to OpenAI format."""
+        try:
+            from huggingface_hub import InferenceClient
+        except ImportError:
+            raise ImportError("Install 'huggingface_hub' package: pip install huggingface_hub")
+
+        token = os.environ.get("HF_API_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        client = InferenceClient(token=token)
+
+        call_kwargs = {"model": model, "messages": messages, **kwargs}
+
+        response = client.chat.completions.create(**call_kwargs)
+
+        return self._huggingface_to_openai_response(response, model)
+
+    def _huggingface_to_openai_response(self, response: Any, model: str) -> Any:
+        """Convert HuggingFace chat completion response to OpenAI format."""
+        from types import SimpleNamespace
+
+        # HuggingFace chat completions return OpenAI-compatible format,
+        # but normalize to SimpleNamespace for consistent attribute access
+        choices = []
+        for choice in response.choices:
+            choices.append(SimpleNamespace(
+                index=choice.index,
+                message=SimpleNamespace(
+                    role=choice.message.role,
+                    content=choice.message.content or "",
+                ),
+                finish_reason=getattr(choice, "finish_reason", "stop"),
+            ))
+
+        usage_obj = getattr(response, "usage", None)
+        return SimpleNamespace(
+            id=getattr(response, "id", f"hf-{model}"),
+            model=model,
+            choices=choices,
+            usage=SimpleNamespace(
+                prompt_tokens=getattr(usage_obj, "prompt_tokens", 0),
+                completion_tokens=getattr(usage_obj, "completion_tokens", 0),
+                total_tokens=getattr(usage_obj, "total_tokens", 0),
+            ),
+        )
 
     def _anthropic_to_openai_response(self, response: Any, model: str) -> Any:
         """Convert Anthropic response to OpenAI format."""

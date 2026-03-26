@@ -1,17 +1,30 @@
-# Kalibr — Ship agents that fix themselves
+# Kalibr Python SDK
 
-Your agent captures its own execution telemetry, reports whether it achieved the goal, and Kalibr routes future calls to what actually works. When models degrade, Kalibr reroutes before users notice.
+Kalibr lets agents choose the optimal model + tools for any task, across any modality, as they run in production.
+
+Open source SDK. Hosted optimization intelligence.
+
+## Features
+
+* **Outcome-aware routing** — Routes each goal to the model+tool path that is actually succeeding in production
+* **Continuous optimization** — Learns from real outcomes using Thompson Sampling. Adapts as models degrade, tools fail, or costs shift
+* **Auto-instrumentation** — Traces OpenAI, Anthropic, Google AI, and DeepSeek calls with zero code changes. DeepSeek spans and costs are attributed correctly without a separate instrumentor.
+* **TraceCapsule** — Cross-agent context propagation for multi-agent systems
+* **Cost & token tracking** — Real-time cost calculation and token monitoring across all providers
+* **Any model, any modality** — Text LLMs, voice, image, embeddings, classification, translation, anything on HuggingFace
+* **HuggingFace integration** — One instrumentor covers all 17 task types across every modality
+* **Framework integrations** — LangChain, CrewAI, OpenAI Agents SDK
 
 ## Developers — hand this to your coding agent
 
 ```
 pip install kalibr
-kalibr signup --email you@company.com
+kalibr auth
 kalibr init
 kalibr verify
 ```
 
-Your agent creates its own account, you click one email verification link, and it handles the rest — credentials, codebase scanning, framework detection, and instrumentation. Zero config.
+Your agent runs `kalibr auth`, your terminal shows a code, you enter it at dashboard.kalibr.systems/link, and the agent handles the rest — credentials, codebase scanning, framework detection, and instrumentation. One approval, zero config.
 
 Already have credentials? Skip signup:
 
@@ -45,6 +58,73 @@ response = router.completion(
 )
 ```
 
+## Coding Agent Setup
+
+If you're using Claude Code, Cursor, Windsurf, or any coding agent to build with Kalibr, add the appropriate context file to your project so the agent generates Router-based code by default.
+
+**Claude Code / Codex / OpenClaw:**
+Copy [templates/CLAUDE.md](templates/CLAUDE.md) to your project root as `CLAUDE.md`
+
+**Cursor / Windsurf:**
+Copy [templates/.cursorrules](templates/.cursorrules) to your project root as `.cursorrules`
+
+Once added, your coding agent will automatically:
+- Use `Router` instead of raw LLM clients
+- Always put `import kalibr` first
+- Include outcome reporting in every agent it builds
+
+## Agent Starter Template
+
+Need a production-ready agent scaffold with Kalibr already wired in?
+
+**[kalibr-ai/agent-starter](https://github.com/kalibr-ai/agent-starter)** — clone and ship.
+
+```bash
+git clone https://github.com/kalibr-ai/agent-starter.git my-agent
+cd my-agent
+cp .env.example .env  # fill in your keys
+pip install -r requirements.txt
+python agent.py
+```
+
+Includes Router wired in, CLAUDE.md and .cursorrules for coding agents, and routes between gpt-4o-mini and claude-sonnet out of the box.
+
+## Multimodal Routing
+
+Route any ML task, not just text LLMs:
+
+```python
+from kalibr import Router
+
+# Transcription
+router = Router(
+    goal="transcribe_call",
+    paths=["openai/whisper-large-v3", "facebook/seamless-m4t-v2-large"],
+    success_when=lambda output: len(output) > 50
+)
+result = router.execute(task="automatic_speech_recognition", input_data=audio_bytes)
+
+# Image generation
+router = Router(goal="product_image", paths=["stabilityai/stable-diffusion-xl-base-1.0"])
+result = router.execute(task="text_to_image", input_data="a product photo")
+```
+
+## DeepSeek
+
+DeepSeek models work out of the box — no separate SDK, no extra config beyond `DEEPSEEK_API_KEY`:
+
+```python
+from kalibr import Router
+
+router = Router(
+    goal="classify_icp",
+    paths=["deepseek-chat", "gpt-4o-mini", "claude-sonnet-4-20250514"],
+)
+response = router.completion(messages=[{"role": "user", "content": "Is this an ICP fit?"}])
+```
+
+Supported models: `deepseek-chat` (V3), `deepseek-reasoner` (R1), `deepseek-coder`. Kalibr attributes costs and spans correctly for each.
+
 `pip install kalibr`
 
 [![PyPI version](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
@@ -72,7 +152,10 @@ Get your credentials from [dashboard.kalibr.systems/settings](https://dashboard.
 ```bash
 export KALIBR_API_KEY=your-api-key
 export KALIBR_TENANT_ID=your-tenant-id
-export OPENAI_API_KEY=sk-...  # or ANTHROPIC_API_KEY for Claude models
+export OPENAI_API_KEY=sk-...           # OpenAI models
+export ANTHROPIC_API_KEY=sk-ant-...    # Anthropic / Claude models
+export DEEPSEEK_API_KEY=sk-...         # DeepSeek models (deepseek-chat, deepseek-reasoner)
+export HF_API_TOKEN=hf_...             # HuggingFace private models / rate-limit bypass
 ```
 
 Or use autonomous provisioning:
@@ -82,18 +165,20 @@ export KALIBR_PROVISIONING_TOKEN=your-token  # create at dashboard.kalibr.system
 kalibr init  # scans your project and provisions credentials automatically
 ```
 
-Or sign up directly from the CLI:
+Or link via device code (recommended):
 
 ```bash
-kalibr signup --email you@company.com
-# Creates account, sends verification email. Click the link, agent gets sk_ key.
+kalibr auth
+# Terminal shows a code. Enter it at dashboard.kalibr.systems/link.
+# Agent receives credentials automatically. No email required.
 kalibr init
 ```
 
 ## CLI
 
 ```bash
-kalibr signup EMAIL  # create account from terminal, human clicks one email link
+kalibr auth          # link agent to your Kalibr account (device code — recommended)
+kalibr signup EMAIL  # DEPRECATED: use kalibr auth instead
 kalibr init          # scan codebase, wrap bare LLM calls with Router, provision credentials
 kalibr verify        # check credentials and Router connectivity
 kalibr prompt        # copy Claude Code / Cursor integration prompt to clipboard
@@ -289,15 +374,21 @@ KalibrPipecatInstrumentor().instrument()   # Trace Pipecat processors
 
 ## Auto-Instrumentation
 
-Kalibr auto-instruments OpenAI, Anthropic, and Google SDKs on import:
+Kalibr auto-instruments OpenAI, Anthropic, Google, and HuggingFace SDKs on import (17 task types across every modality):
 
 ```python
-import kalibr  # Must be first import
+import kalibr  # Must be first import — patches OpenAI, Anthropic, Google, HuggingFace
 from openai import OpenAI
 
 client = OpenAI()
 response = client.chat.completions.create(model="gpt-4o", messages=[...])
-# Traced automatically — cost, latency, tokens, success all captured
+# Traced automatically — cost, latency, tokens captured
+
+# DeepSeek works automatically — same OpenAI SDK, detected by model prefix
+from openai import OpenAI
+deepseek = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+response = deepseek.chat.completions.create(model="deepseek-chat", messages=[...])
+# Span labeled deepseek.chat.completions.create, cost at DeepSeek rates
 ```
 
 Disable with `KALIBR_AUTO_INSTRUMENT=false`.

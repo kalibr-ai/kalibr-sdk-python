@@ -19,17 +19,50 @@ from kalibr.pricing import compute_cost_flexible
 from .base import BaseCostAdapter, BaseInstrumentation, FlexibleCostAdapter
 
 
-class OpenAICostAdapter(BaseCostAdapter):
-    """Cost calculation adapter for OpenAI models.
+def _detect_vendor(model: str) -> str:
+    """Detect the actual vendor from model name.
 
-    Uses centralized pricing from kalibr.pricing module.
+    The OpenAI Python SDK is used by multiple providers (OpenAI, DeepSeek, etc.)
+    via base_url overrides. We detect the real vendor from the model name so spans
+    and cost calculations are attributed correctly.
+
+    Args:
+        model: Model identifier from the API response
+
+    Returns:
+        Vendor string: "openai" or "deepseek"
+    """
+    model_lower = model.lower()
+    if model_lower.startswith("deepseek-"):
+        return "deepseek"
+    return "openai"
+
+
+class OpenAICostAdapter(BaseCostAdapter):
+    """Cost calculation adapter for OpenAI-compatible models.
+
+    Handles OpenAI and any provider that uses the OpenAI SDK (e.g. DeepSeek).
+    Vendor is detected from the model name so cost is always attributed correctly.
     """
 
     def get_vendor_name(self) -> str:
+        """Return vendor name — overridden per-call via calculate_cost."""
         return "openai"
 
     def calculate_cost(self, model: str, usage: Dict[str, int]) -> float:
-        pricing = self.get_pricing_for_model(model)
+        """Calculate cost using the correct vendor pricing for this model.
+
+        Args:
+            model: Model identifier (e.g., "gpt-4o", "deepseek-chat")
+            usage: Token usage dict with prompt_tokens and completion_tokens
+
+        Returns:
+            Cost in USD (rounded to 6 decimal places)
+        """
+        from kalibr.pricing import get_pricing
+
+        vendor = _detect_vendor(model)
+        pricing, _ = get_pricing(vendor, model)
 
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
@@ -198,14 +231,17 @@ class OpenAIInstrumentation(BaseInstrumentation):
             # Extract model from kwargs
             model = kwargs.get("model", "unknown")
 
+            # Detect actual vendor — OpenAI SDK is used by multiple providers
+            vendor = _detect_vendor(model)
+
             # Create span with initial attributes
             with self.tracer.start_as_current_span(
-                "openai.chat.completions.create",
+                f"{vendor}.chat.completions.create",
                 kind=SpanKind.CLIENT,
                 attributes={
-                    "llm.vendor": "openai",
+                    "llm.vendor": vendor,
                     "llm.request.model": model,
-                    "llm.system": "openai",
+                    "llm.system": vendor,
                 },
             ) as span:
                 start_time = time.time()
@@ -241,14 +277,17 @@ class OpenAIInstrumentation(BaseInstrumentation):
             # Extract model from kwargs
             model = kwargs.get("model", "unknown")
 
+            # Detect actual vendor — OpenAI SDK is used by multiple providers
+            vendor = _detect_vendor(model)
+
             # Create span with initial attributes
             with self.tracer.start_as_current_span(
-                "openai.chat.completions.create",
+                f"{vendor}.chat.completions.create",
                 kind=SpanKind.CLIENT,
                 attributes={
-                    "llm.vendor": "openai",
+                    "llm.vendor": vendor,
                     "llm.request.model": model,
-                    "llm.system": "openai",
+                    "llm.system": vendor,
                 },
             ) as span:
                 start_time = time.time()

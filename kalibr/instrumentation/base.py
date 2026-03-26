@@ -127,20 +127,22 @@ class BaseCostAdapter(ABC):
 
 
 class FlexibleCostAdapter(ABC):
-    """Base class for cost adapters that handle any billing unit type.
+    """Cost adapter for any model type — tokens, audio, images, etc.
 
-    Subclasses implement vendor-specific cost calculation using
-    compute_cost_flexible() from the centralized pricing module.
+    Unlike BaseCostAdapter (which assumes token-based pricing), this adapter
+    works with arbitrary usage metrics so it can handle voice, image,
+    embedding, and other non-token models.
     """
 
     @abstractmethod
-    def calculate_cost(self, model: str, usage_metrics: Dict[str, Any]) -> float:
+    def calculate_cost(self, model: str, usage_metrics: dict) -> float:
         """Calculate cost in USD for an API call.
 
         Args:
             model: Model identifier
-            usage_metrics: Dict mapping unit type to quantity,
-                           e.g. {"characters": 3000} or {"audio_seconds": 120}
+            usage_metrics: Dict with task-appropriate keys such as
+                input_tokens, output_tokens, audio_seconds, characters,
+                image_count, etc.
 
         Returns:
             Cost in USD (rounded to 6 decimal places)
@@ -149,17 +151,15 @@ class FlexibleCostAdapter(ABC):
 
     @abstractmethod
     def get_vendor_name(self) -> str:
-        """Get the vendor name for this adapter."""
+        """Return the vendor name for this adapter (e.g. "deepgram")."""
         pass
 
     @abstractmethod
-    def get_usage_metrics(self, response: Any) -> Dict[str, Any]:
+    def get_usage_metrics(self, response: Any) -> dict:
         """Extract usage metrics from a provider response.
 
-        Args:
-            response: Raw response from the provider API
-
         Returns:
-            Dict mapping unit type to quantity
+            Dict with task-appropriate keys like input_tokens,
+            audio_seconds, image_count, etc.
         """
         pass

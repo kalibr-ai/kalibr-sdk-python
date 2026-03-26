@@ -4,17 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kalibr"
-version = "1.5.0"
-description = "Ship agents that fix themselves. Outcome-aware routing for production AI agents."
+version = "1.8.0"
+description = "Outcome-aware LLM routing for production AI agents. Routes between models, tools, and parameters based on real success signals using Thompson Sampling. Automatic fallback, cost optimization, and continuous learning — no redeploy required."
 authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 keywords = [
-    "ai", "mcp", "gpt", "claude", "gemini", "copilot",
-    "openai", "anthropic", "google", "microsoft",
-    "observability", "telemetry", "tracing", "llm",
-    "schema-generation", "api", "multi-model", "langchain", "crewai"
+    "llm", "routing", "model-routing", "llm-routing", "fallback",
+    "agent", "agents", "agent-reliability", "production", "ai",
+    "openai", "anthropic", "thompson-sampling", "multi-armed-bandit",
+    "execution-path", "model-selection", "llm-fallback", "crewai",
+    "langchain", "outcome-routing"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -121,6 +122,9 @@ Issues = "https://github.com/kalibr-ai/kalibr-sdk-python/issues"
 where = ["."]
 include = ["kalibr*", "kalibr_langchain*", "kalibr_crewai*", "kalibr_openai_agents*", "kalibr_voice*"]
 exclude = ["tests*", "examples*"]
+
+[tool.setuptools.package-data]
+"kalibr.templates" = ["CLAUDE.md", ".cursorrules"]
 
 [tool.black]
 line-length = 100

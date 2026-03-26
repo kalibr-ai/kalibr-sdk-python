@@ -6,20 +6,27 @@ between the SDK and backend to ensure schema consistency.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+# Known providers for documentation/validation hints (not enforced)
+KNOWN_PROVIDERS: List[str] = [
+    "openai", "anthropic", "google", "cohere", "custom",
+    "huggingface", "elevenlabs", "deepgram",
+]
 
 
 class TraceEvent(BaseModel):
     """
-    Unified trace event model for LLM observability.
+    Unified trace event model for LLM and non-LLM observability.
 
     Compatible with:
     - Kalibr SDK v1.0.30+
     - Kalibr Backend v1.0+
     - ClickHouse storage schema
 
+    Supports text (LLM), audio, image, embedding, and multimodal traces.
     Phase 4.5: Strict validation enabled to enforce data quality.
     """
 
@@ -81,9 +88,9 @@ class TraceEvent(BaseModel):
         None, max_length=32, description="Runtime environment (vercel_vm, fly_io, local, etc.)"
     )
 
-    # LLM Details
+    # Model Details
     provider: str = Field(
-        description="LLM provider (e.g., openai, anthropic, google, elevenlabs, deepgram)"
+        min_length=1, max_length=32, description="Model provider (see KNOWN_PROVIDERS)"
     )
     model_id: str = Field(
         min_length=1, max_length=64, description="Model identifier (e.g., gpt-4o, claude-3-opus)"
@@ -106,9 +113,9 @@ class TraceEvent(BaseModel):
     duration_ms: int = Field(ge=0, description="Total duration in milliseconds")
     latency_ms: Optional[int] = Field(None, description="Legacy field, same as duration_ms")
 
-    # Tokens
-    input_tokens: int = Field(ge=0, description="Number of input tokens")
-    output_tokens: int = Field(ge=0, description="Number of output tokens")
+    # Tokens (default to 0 for non-text tasks)
+    input_tokens: int = Field(default=0, ge=0, description="Number of input tokens (0 for non-text tasks)")
+    output_tokens: int = Field(default=0, ge=0, description="Number of output tokens (0 for non-text tasks)")
     total_tokens: Optional[int] = Field(
         None, description="Total tokens (input + output), computed if not provided"
     )
@@ -117,6 +124,23 @@ class TraceEvent(BaseModel):
     cost_usd: float = Field(ge=0.0, description="Total cost in USD")
     total_cost_usd: Optional[float] = Field(None, description="Legacy field, same as cost_usd")
     unit_price_usd: Optional[float] = Field(None, ge=0.0, description="Price per token in USD")
+
+    # Audio metrics
+    audio_duration_ms: Optional[int] = Field(None, ge=0, description="Audio duration in milliseconds")
+    audio_format: Optional[str] = Field(None, max_length=16, description="Audio format (wav, mp3, etc.)")
+
+    # Image metrics
+    image_count: Optional[int] = Field(None, ge=0, description="Number of images generated")
+    image_resolution: Optional[str] = Field(None, max_length=32, description="Image resolution (e.g. 1024x1024)")
+
+    # Generic metrics for any modality
+    input_units: Optional[float] = Field(None, ge=0, description="Input quantity in task-native units")
+    output_units: Optional[float] = Field(None, ge=0, description="Output quantity in task-native units")
+    unit_type: Optional[str] = Field(None, max_length=32, description="Unit type: tokens, audio_seconds, characters, images")
+
+    # Task/modality classification
+    modality: Optional[str] = Field(None, max_length=32, description="Modality: text, audio, image, embedding, multimodal")
+    task_type: Optional[str] = Field(None, max_length=32, description="HuggingFace task type or custom classification")
 
     # Status & Errors
     status: Literal["success", "error", "timeout"] = Field(description="Execution status")
@@ -170,45 +194,42 @@ class TraceEvent(BaseModel):
     # Legacy fields
     vendor: Optional[str] = Field(None, description="Legacy field, same as provider")
 
-    @field_validator("total_tokens", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def compute_total_tokens(cls, v, info):
-        """Auto-compute total_tokens if not provided."""
-        if v is None and "input_tokens" in info.data and "output_tokens" in info.data:
-            return info.data["input_tokens"] + info.data["output_tokens"]
-        return v
+    def _auto_fill_defaults(cls, data: Any) -> Any:
+        """Auto-fill computed and legacy fields before validation."""
+        if not isinstance(data, dict):
+            return data
 
-    @field_validator("model_name", mode="before")
-    @classmethod
-    def default_model_name(cls, v, info):
-        """Default model_name to model_id if not provided."""
-        if v is None and "model_id" in info.data:
-            return info.data["model_id"]
-        return v
+        # Auto-compute total_tokens
+        if data.get("total_tokens") is None:
+            input_t = data.get("input_tokens", 0)
+            output_t = data.get("output_tokens", 0)
+            if input_t is not None and output_t is not None:
+                data["total_tokens"] = input_t + output_t
 
-    @field_validator("latency_ms", mode="before")
-    @classmethod
-    def sync_latency(cls, v, info):
-        """Sync latency_ms with duration_ms if not provided."""
-        if v is None and "duration_ms" in info.data:
-            return info.data["duration_ms"]
-        return v
+        # Default model_name to model_id
+        if data.get("model_name") is None and "model_id" in data:
+            data["model_name"] = data["model_id"]
 
-    @field_validator("total_cost_usd", mode="before")
-    @classmethod
-    def sync_cost(cls, v, info):
-        """Sync total_cost_usd with cost_usd if not provided."""
-        if v is None and "cost_usd" in info.data:
-            return info.data["cost_usd"]
-        return v
+        # Sync legacy fields
+        if data.get("latency_ms") is None and "duration_ms" in data:
+            data["latency_ms"] = data["duration_ms"]
 
-    @field_validator("vendor", mode="before")
-    @classmethod
-    def sync_vendor(cls, v, info):
-        """Sync vendor with provider if not provided."""
-        if v is None and "provider" in info.data:
-            return info.data["provider"]
-        return v
+        if data.get("total_cost_usd") is None and "cost_usd" in data:
+            data["total_cost_usd"] = data["cost_usd"]
+
+        if data.get("vendor") is None and "provider" in data:
+            data["vendor"] = data["provider"]
+
+        # Auto-set unit_type to "tokens" when token fields are populated
+        if data.get("unit_type") is None:
+            input_t = data.get("input_tokens", 0) or 0
+            output_t = data.get("output_tokens", 0) or 0
+            if input_t > 0 or output_t > 0:
+                data["unit_type"] = "tokens"
+
+        return data
 
 
 # Convenience type aliases

@@ -4,7 +4,16 @@ import os
 import re
 from pathlib import Path
 
-from kalibr.cli.scanner import LLMCallMatch
+from kalibr.cli.scanner import LLMCallMatch, HF_TASK_DEFAULT_PATHS
+
+
+# Default multi-provider paths for LLM completion calls.
+# Always suggest at least two paths so Thompson Sampling has something to learn from.
+# Model IDs must be valid — verified against router.py docstring and examples.
+DEFAULT_LLM_PATHS = [
+    '{"model": "gpt-4o-mini"}',
+    '{"model": "claude-sonnet-4-20250514"}',
+]
 
 
 def _build_router_replacement(match: LLMCallMatch) -> str:
@@ -12,43 +21,81 @@ def _build_router_replacement(match: LLMCallMatch) -> str:
     goal = match.inferred_goal
     indent = re.match(r"(\s*)", match.matched_text).group(1)
 
-    if match.pattern_type == "openai":
+    if match.pattern_type in ("huggingface", "huggingface_pipeline"):
+        return _build_hf_replacement(match, indent, goal)
+
+    return _build_completion_replacement(match, indent, goal)
+
+
+def _build_completion_replacement(match: LLMCallMatch, indent: str, goal: str) -> str:
+    """Router.completion() replacement for LLM chat/message calls."""
+    paths_str = _format_paths(DEFAULT_LLM_PATHS, indent)
+
+    if match.pattern_type == "crewai":
         return (
+            f'{indent}import kalibr\n'
             f'{indent}from kalibr import Router\n'
-            f'{indent}router = Router(goal="{goal}")\n'
-            f'{indent}response = router.completion(messages=messages)'
-        )
-    elif match.pattern_type == "anthropic":
-        return (
-            f'{indent}from kalibr import Router\n'
-            f'{indent}router = Router(goal="{goal}")\n'
-            f'{indent}response = router.completion(messages=messages)'
-        )
-    elif match.pattern_type == "langchain":
-        return (
-            f'{indent}from kalibr import Router\n'
-            f'{indent}router = Router(goal="{goal}")\n'
-            f'{indent}response = router.completion(messages=messages)'
-        )
-    elif match.pattern_type == "crewai":
-        return (
-            f'{indent}from kalibr import Router\n'
-            f'{indent}router = Router(goal="{goal}")\n'
+            f'{indent}router = Router(\n'
+            f'{indent}    goal="{goal}",\n'
+            f'{indent}    paths=[\n'
+            f'{paths_str}\n'
+            f'{indent}    ],\n'
+            f'{indent})\n'
             f'{indent}# Use router instead of hardcoded llm= in Agent()\n'
             f'{indent}# agent = Agent(llm=router.as_langchain(), ...)'
         )
     elif match.pattern_type == "openai_agents":
         return (
+            f'{indent}import kalibr\n'
             f'{indent}from kalibr import Router\n'
-            f'{indent}router = Router(goal="{goal}")\n'
+            f'{indent}router = Router(\n'
+            f'{indent}    goal="{goal}",\n'
+            f'{indent}    paths=[\n'
+            f'{paths_str}\n'
+            f'{indent}    ],\n'
+            f'{indent})\n'
             f'{indent}# Use router.completion() instead of Runner.run()'
         )
     else:
         return (
+            f'{indent}import kalibr\n'
             f'{indent}from kalibr import Router\n'
-            f'{indent}router = Router(goal="{goal}")\n'
+            f'{indent}router = Router(\n'
+            f'{indent}    goal="{goal}",\n'
+            f'{indent}    paths=[\n'
+            f'{paths_str}\n'
+            f'{indent}    ],\n'
+            f'{indent})\n'
             f'{indent}response = router.completion(messages=messages)'
         )
+
+
+def _build_hf_replacement(match: LLMCallMatch, indent: str, goal: str) -> str:
+    """Router.execute() replacement for HuggingFace task calls."""
+    task = match.inferred_task or "text_generation"
+
+    raw_paths = HF_TASK_DEFAULT_PATHS.get(task, [
+        '{"model": "mistralai/Mixtral-8x7B-Instruct-v0.1"}',
+        '{"model": "meta-llama/Meta-Llama-3-8B-Instruct"}',
+    ])
+    paths_str = _format_paths(raw_paths, indent)
+
+    return (
+        f'{indent}import kalibr\n'
+        f'{indent}from kalibr import Router\n'
+        f'{indent}router = Router(\n'
+        f'{indent}    goal="{goal}",\n'
+        f'{indent}    paths=[\n'
+        f'{paths_str}\n'
+        f'{indent}    ],\n'
+        f'{indent})\n'
+        f'{indent}response = router.execute(task="{task}", input_data=input_data)'
+    )
+
+
+def _format_paths(raw_paths: list[str], indent: str) -> str:
+    """Format a list of path strings into indented Router paths= block."""
+    return "\n".join(f"{indent}        {p}," for p in raw_paths)
 
 
 def get_proposed_change(match: LLMCallMatch) -> str:
@@ -65,15 +112,11 @@ def apply_change(match: LLMCallMatch) -> bool:
         with open(match.file_path, encoding="utf-8") as f:
             lines = f.readlines()
 
-        # The match line_number is 1-indexed
         line_idx = match.line_number - 1
         if line_idx >= len(lines):
             return False
 
-        original_line = lines[line_idx]
         replacement = _build_router_replacement(match)
-
-        # Replace the matched line with the Router code
         lines[line_idx] = replacement + "\n"
 
         with open(match.file_path, "w", encoding="utf-8") as f:
@@ -89,13 +132,11 @@ def ensure_kalibr_in_requirements(project_dir: str) -> bool:
 
     Returns True if a change was made.
     """
-    # Check pyproject.toml first
     pyproject_path = os.path.join(project_dir, "pyproject.toml")
     if os.path.exists(pyproject_path):
         with open(pyproject_path, encoding="utf-8") as f:
             content = f.read()
         if "kalibr" not in content:
-            # Find dependencies section and add kalibr
             if "dependencies" in content:
                 content = re.sub(
                     r'(dependencies\s*=\s*\[)',
@@ -108,7 +149,6 @@ def ensure_kalibr_in_requirements(project_dir: str) -> bool:
                 return True
         return False
 
-    # Fall back to requirements.txt
     req_path = os.path.join(project_dir, "requirements.txt")
     if os.path.exists(req_path):
         with open(req_path, encoding="utf-8") as f:
@@ -119,7 +159,6 @@ def ensure_kalibr_in_requirements(project_dir: str) -> bool:
             return True
         return False
 
-    # Create requirements.txt if neither exists
     with open(req_path, "w", encoding="utf-8") as f:
         f.write("kalibr\n")
     return True

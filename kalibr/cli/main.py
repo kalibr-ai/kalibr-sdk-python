@@ -1,6 +1,7 @@
 """Main CLI entry point for Kalibr"""
 
 import typer
+from kalibr.cli.auth_cmd import auth
 from kalibr.cli.capsule_cmd import capsule
 from kalibr.cli.deploy_cmd import deploy
 from kalibr.cli.init_cmd import init
@@ -29,6 +30,7 @@ app.command(name="run")(run)
 app.command(name="init")(init)
 app.command(name="verify")(verify)
 app.command(name="signup")(signup)
+app.command(name="auth")(auth)
 app.command(name="prompt")(prompt)
 
 

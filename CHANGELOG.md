@@ -7,30 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.6.0] - 2026-03-05
+## [1.8.0] - 2026-03-26
 
 ### Added
 
-- **Voice AI Support** — trace, cost-track, and route voice operations (TTS/STT)
-  - Flexible pricing infrastructure: `UNIT_PRICING` nested dict with per-character (TTS) and per-second (STT) pricing for ElevenLabs, OpenAI (tts-1, tts-1-hd, whisper-1), and Deepgram (nova-2, aura-*)
-  - `compute_cost_flexible(vendor, model, usage_metrics)` in `kalibr.pricing` — single function for any billing unit type
-  - `FlexibleCostAdapter` ABC in `kalibr.instrumentation.base` — `ElevenLabsCostAdapter`, `OpenAIVoiceCostAdapter`, `DeepgramCostAdapter` in `kalibr.cost_adapter`
-  - `CostAdapterFactory.compute_voice_cost()` delegates to `compute_cost_flexible()`
-- **Voice SDK Auto-Instrumentation**
-  - ElevenLabs: patches `ElevenLabs.generate()` (sync/async) with OTel spans and cost tracking
-  - Deepgram: patches `ListenRESTClient.transcribe_file/transcribe_url` (sync/async) with OTel spans
-  - OpenAI Audio: patches `Speech.create` (TTS) and `Transcriptions.create` (STT), sync + async
-  - `auto_instrument(["elevenlabs", "deepgram"])` — opt-in, not in default list
-- **Router Voice Methods**
-  - `router.synthesize(text, voice=..., model=...)` — TTS routing with cost tracking
-  - `router.transcribe(audio, language=..., model=...)` — STT routing with cost tracking
-  - Auto-detects vendor from model prefix: `tts-*`/`whisper-*` → OpenAI, `eleven_*` → ElevenLabs, `nova-*`/`aura-*` → Deepgram
-- **Voice Agent Framework Package** (`kalibr_voice`)
-  - `KalibrLiveKitInstrumentor` — wraps LiveKit Agent pipeline stages (STT → LLM → TTS)
-  - `KalibrPipecatInstrumentor` — wraps Pipecat pipeline processors
-- **Collector** now detects `voice.operation` span attribute and exports voice metadata (character count, audio duration, voice ID) in schema v1.0 compatible `metadata` dict
-- Optional dependencies: `kalibr[elevenlabs]`, `kalibr[deepgram]`, `kalibr[voice]`, `kalibr[livekit]`, `kalibr[pipecat]`
-- 86 new tests across 4 test files
+- **kalibr init — HuggingFace support** ([#121](https://github.com/kalibr-ai/kalibr-sdk-python/pull/121))
+  - Scanner detects all 17 HuggingFace InferenceClient task methods and `pipeline()` calls
+  - Rewriter generates `router.execute(task=..., input_data=...)` for HF tasks — correct method, not `completion()`
+  - Task-appropriate default model pairs for all 17 task types
+  - `router.execute()` `task_method_map` expanded from 10 to 17 tasks (was missing: `chat_completion`, `text_generation`, `token_classification`, `fill_mask`, `audio_classification`, `image_segmentation`, `table_question_answering`)
+  - All scaffolded Routers now include 2 default paths (was 0 — defeats Thompson Sampling)
+  - `import kalibr` enforced as first line in all generated code
+
+- **HF token + DeepSeek provider** ([#123](https://github.com/kalibr-ai/kalibr-sdk-python/pull/123))
+  - `HF_API_TOKEN` / `HUGGING_FACE_HUB_TOKEN` passed to `InferenceClient`
+  - `deepseek-*` models recognized in `router._dispatch()` — no longer falls through to OpenAI
+
+- **DeepSeek pricing + vendor attribution** ([#124](https://github.com/kalibr-ai/kalibr-sdk-python/pull/124))
+  - `deepseek` vendor added to `pricing.py` (`deepseek-chat` $0.27/$1.10, `deepseek-reasoner` $0.55/$2.19, `deepseek-coder` $0.27/$1.10)
+  - `_detect_vendor()` in `openai_instr.py`: DeepSeek calls get correct span name (`deepseek.chat.completions.create`), `llm.vendor=deepseek`, and DeepSeek pricing — no separate instrumentor needed
+
+## [1.7.0] - 2026-03-18
+
+### Added
+
+- **Multimodal foundation** — Any model, any modality. Text LLMs, voice, image, embeddings, classification, translation
+- **HuggingFace InferenceClient instrumentation** — All 17 task types auto-instrumented (chat_completion, text_generation, automatic_speech_recognition, text_to_speech, text_to_image, feature_extraction, text_classification, token_classification, fill_mask, audio_classification, image_to_text, image_classification, image_segmentation, object_detection, translation, summarization, table_question_answering)
+- **Router.execute()** — Route any HuggingFace task with the same outcome-learning loop as Router.completion()
+- **Unified pricing** — UNIT_PRICING supports tokens, audio_seconds, characters, and images through compute_cost_flexible()
+- **Multimodal trace schema** — TraceEvent supports audio_duration_ms, audio_format, image_count, image_resolution, modality, task_type, unit_type
+- **FlexibleCostAdapter** — Base class for cost adapters across any billing unit
+- **14 intelligence task types**: transcribe, synthesize, image_gen, image_classify, embed, translate (new) + code, summarize, classify, generate, extract, qa, chat, general (existing)
+
+### Fixed
+
+- ElevenLabs pricing corrected (was 10x too low)
+- Deepgram pricing corrected (per-minute price was in per-second field, 60x too high)
+- OpenAI voice models (tts-1, tts-1-hd, whisper-1) added to UNIT_PRICING
+- HuggingFace cost adapter now delegates to centralized pricing for non-token models
+
+## [1.6.0] - 2026-03-11
+
+### Added
+
+- OpenAI Responses API instrumentation (`client.responses.create()` and `client.responses.stream()`)
+- Automatic telemetry capture for agents using the Responses API (e.g., Hermes Agent in codex_responses mode)
+- `openai_responses` provider in auto_instrument defaults — enabled automatically on `import kalibr`
+- Stream context manager wrapping — captures usage/cost/latency from `get_final_response()` after stream completion
 
 ## [1.4.2] - 2026-02-04
 
