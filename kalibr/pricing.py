@@ -335,7 +335,6 @@ def get_unit_type(vendor: str, model: str) -> str:
 
 
 def compute_cost_flexible(
-def compute_cost_flexible(
     vendor: str, model: str, usage_metrics: Dict[str, Any]
 ) -> float:
     """Compute cost for any model type — tokens, audio, images, etc.
