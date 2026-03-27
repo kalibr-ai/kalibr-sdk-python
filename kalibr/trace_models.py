@@ -171,6 +171,20 @@ class TraceEvent(BaseModel):
         None, max_length=64, description="Request identifier for correlation"
     )
 
+    # Multimodal fields
+    audio_duration_ms: Optional[float] = Field(
+        None, ge=0.0, description="Audio duration in milliseconds"
+    )
+    modality: Optional[str] = Field(
+        None, max_length=32, description="Modality type (e.g., text, audio, image)"
+    )
+    task_type: Optional[str] = Field(
+        None, max_length=32, description="Task type (e.g., tts, stt, chat_completion)"
+    )
+    unit_type: Optional[str] = Field(
+        None, max_length=32, description="Billing unit type (e.g., characters, audio_seconds, tokens)"
+    )
+
     # Metadata
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional custom metadata")
     data_class: Optional[Literal["economic", "performance", "diagnostic"]] = Field(

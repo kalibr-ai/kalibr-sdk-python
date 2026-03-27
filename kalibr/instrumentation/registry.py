@@ -83,11 +83,21 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
                 from . import openai_responses_instr
 
                 success = openai_responses_instr.instrument()
+
+            elif provider_lower == "elevenlabs":
+                from . import elevenlabs_instr
+
+                success = elevenlabs_instr.instrument()
                 results[provider_lower] = success
                 if success:
                     with _registry_lock:
                         _instrumented_providers.add(provider_lower)
-                    print(f"✅ Instrumented OpenAI Responses API")
+                    print(f"✅ Instrumented ElevenLabs SDK")
+
+            elif provider_lower == "deepgram":
+                from . import deepgram_instr
+
+                success = deepgram_instr.instrument()
 
             elif provider_lower == "huggingface":
                 from . import huggingface_instr
@@ -97,7 +107,7 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
                 if success:
                     with _registry_lock:
                         _instrumented_providers.add(provider_lower)
-                    print(f"✅ Instrumented HuggingFace SDK")
+                    print(f"✅ Instrumented Deepgram SDK")
 
             else:
                 print(f"⚠️  Unknown provider: {provider}")
@@ -161,6 +171,26 @@ def uninstrument_all() -> Dict[str, bool]:
                     with _registry_lock:
                         _instrumented_providers.discard(provider)
                     print(f"✅ Uninstrumented Google Generative AI SDK")
+
+            elif provider == "elevenlabs":
+                from . import elevenlabs_instr
+
+                success = elevenlabs_instr.uninstrument()
+                results[provider] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.discard(provider)
+                    print(f"✅ Uninstrumented ElevenLabs SDK")
+
+            elif provider == "deepgram":
+                from . import deepgram_instr
+
+                success = deepgram_instr.uninstrument()
+                results[provider] = success
+                if success:
+                    with _registry_lock:
+                        _instrumented_providers.discard(provider)
+                    print(f"✅ Uninstrumented Deepgram SDK")
 
             elif provider == "openai_responses":
                 from . import openai_responses_instr

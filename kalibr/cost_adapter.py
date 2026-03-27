@@ -19,7 +19,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
 
-from kalibr.pricing import get_pricing, normalize_model_name
+from kalibr.pricing import compute_cost_flexible, get_pricing
 
 
 class BaseCostAdapter(ABC):
@@ -105,6 +105,44 @@ class AnthropicCostAdapter(BaseCostAdapter):
         return round(input_cost + output_cost, 6)
 
 
+class ElevenLabsCostAdapter:
+    """Cost adapter for ElevenLabs voice models."""
+
+    def get_vendor_name(self) -> str:
+        return "elevenlabs"
+
+    def compute_cost(
+        self, model_name: str, characters: int = 0, **kwargs
+    ) -> float:
+        return compute_cost_flexible("elevenlabs", model_name, {"characters": characters})
+
+
+class OpenAIVoiceCostAdapter:
+    """Cost adapter for OpenAI voice models (TTS and Whisper)."""
+
+    def get_vendor_name(self) -> str:
+        return "openai"
+
+    def compute_cost(
+        self, model_name: str, characters: int = 0, audio_seconds: float = 0.0, **kwargs
+    ) -> float:
+        usage = {"characters": characters} if characters else {"audio_seconds": audio_seconds}
+        return compute_cost_flexible("openai", model_name, usage)
+
+
+class DeepgramCostAdapter:
+    """Cost adapter for Deepgram voice models."""
+
+    def get_vendor_name(self) -> str:
+        return "deepgram"
+
+    def compute_cost(
+        self, model_name: str, characters: int = 0, audio_seconds: float = 0.0, **kwargs
+    ) -> float:
+        usage = {"characters": characters} if characters else {"audio_seconds": audio_seconds}
+        return compute_cost_flexible("deepgram", model_name, usage)
+
+
 class CostAdapterFactory:
     """Factory to get appropriate cost adapter for a vendor."""
 
@@ -115,40 +153,30 @@ class CostAdapterFactory:
 
     @classmethod
     def get_adapter(cls, vendor: str) -> Optional[BaseCostAdapter]:
-        """Get cost adapter for vendor.
-
-        Args:
-            vendor: Vendor name (openai, anthropic, etc.)
-
-        Returns:
-            Cost adapter instance or None if not supported
-        """
+        """Get cost adapter for vendor."""
         return cls._adapters.get(vendor.lower())
 
     @classmethod
     def register_adapter(cls, vendor: str, adapter: BaseCostAdapter):
-        """Register a custom cost adapter.
-
-        Args:
-            vendor: Vendor name
-            adapter: Cost adapter instance
-        """
+        """Register a custom cost adapter."""
         cls._adapters[vendor.lower()] = adapter
 
     @classmethod
     def compute_cost(cls, vendor: str, model_name: str, tokens_in: int, tokens_out: int) -> float:
-        """Convenience method to compute cost.
-
-        Args:
-            vendor: Vendor name
-            model_name: Model identifier
-            tokens_in: Input token count
-            tokens_out: Output token count
-
-        Returns:
-            Cost in USD, or 0.0 if vendor not supported
-        """
+        """Convenience method to compute cost."""
         adapter = cls.get_adapter(vendor)
         if adapter:
             return adapter.compute_cost(model_name, tokens_in, tokens_out)
         return 0.0
+
+    @classmethod
+    def compute_voice_cost(
+        cls,
+        vendor: str,
+        model_name: str,
+        characters: int = 0,
+        audio_seconds: float = 0.0,
+    ) -> float:
+        """Convenience method to compute voice cost using flexible pricing."""
+        usage = {"characters": characters} if characters else {"audio_seconds": audio_seconds}
+        return compute_cost_flexible(vendor, model_name, usage)

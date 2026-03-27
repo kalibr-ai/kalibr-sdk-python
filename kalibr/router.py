@@ -658,6 +658,202 @@ class Router:
             params=params,
         )
 
+    def synthesize(self, text: str, voice: Optional[str] = None, **kwargs) -> Any:
+        """Route a text-to-speech request to the best voice model.
+
+        Args:
+            text: Text to synthesize
+            voice: Optional voice ID
+            **kwargs: Additional args passed to provider
+
+        Returns:
+            SimpleNamespace with: audio, kalibr_trace_id, model, cost_usd
+        """
+        from types import SimpleNamespace
+        from kalibr.pricing import compute_cost_flexible
+
+        model_id = kwargs.pop("model", None) or (
+            self._paths[0]["model"] if self._paths else "tts-1"
+        )
+        trace_id = uuid.uuid4().hex
+        self._last_trace_id = trace_id
+        self._last_model_id = model_id
+
+        tracer = otel_trace.get_tracer("kalibr.router")
+        otel_context = _create_context_with_trace_id(trace_id)
+
+        with tracer.start_as_current_span(
+            "kalibr.router.synthesize",
+            context=otel_context,
+            attributes={
+                "kalibr.goal": self.goal,
+                "kalibr.trace_id": trace_id,
+                "kalibr.model_id": model_id,
+                "voice.operation": "tts",
+            },
+        ):
+            result = self._dispatch_voice_tts(model_id, text, voice, **kwargs)
+            character_count = len(text) if isinstance(text, str) else 0
+            vendor = self._detect_voice_vendor(model_id)
+            cost = compute_cost_flexible(vendor, model_id, {"characters": character_count})
+
+            return SimpleNamespace(
+                audio=result,
+                kalibr_trace_id=trace_id,
+                model=model_id,
+                cost_usd=cost,
+            )
+
+    def transcribe(self, audio: Any, language: Optional[str] = None, **kwargs) -> Any:
+        """Route a speech-to-text request to the best voice model.
+
+        Args:
+            audio: Audio data (file path, bytes, or file-like object)
+            language: Optional language hint
+            **kwargs: Additional args passed to provider
+
+        Returns:
+            SimpleNamespace with: text, kalibr_trace_id, model, cost_usd
+        """
+        from types import SimpleNamespace
+        from kalibr.pricing import compute_cost_flexible
+
+        model_id = kwargs.pop("model", None) or (
+            self._paths[0]["model"] if self._paths else "whisper-1"
+        )
+        trace_id = uuid.uuid4().hex
+        self._last_trace_id = trace_id
+        self._last_model_id = model_id
+
+        tracer = otel_trace.get_tracer("kalibr.router")
+        otel_context = _create_context_with_trace_id(trace_id)
+
+        with tracer.start_as_current_span(
+            "kalibr.router.transcribe",
+            context=otel_context,
+            attributes={
+                "kalibr.goal": self.goal,
+                "kalibr.trace_id": trace_id,
+                "kalibr.model_id": model_id,
+                "voice.operation": "stt",
+            },
+        ):
+            result = self._dispatch_voice_stt(model_id, audio, language, **kwargs)
+            text = result if isinstance(result, str) else getattr(result, "text", str(result))
+            audio_seconds = kwargs.get("audio_duration_seconds", 0.0)
+            vendor = self._detect_voice_vendor(model_id)
+            cost = compute_cost_flexible(vendor, model_id, {"audio_seconds": audio_seconds})
+
+            return SimpleNamespace(
+                text=text,
+                kalibr_trace_id=trace_id,
+                model=model_id,
+                cost_usd=cost,
+            )
+
+    def _detect_voice_vendor(self, model_id: str) -> str:
+        """Detect voice vendor from model prefix."""
+        model_lower = model_id.lower()
+        if model_lower.startswith(("tts-", "whisper")):
+            return "openai"
+        if model_lower.startswith("eleven_") or "eleven" in model_lower:
+            return "elevenlabs"
+        if model_lower.startswith(("nova", "aura", "enhanced", "base")):
+            return "deepgram"
+        return "openai"
+
+    def _dispatch_voice_tts(
+        self, model_id: str, text: str, voice: Optional[str] = None, **kwargs
+    ) -> Any:
+        """Dispatch TTS to the appropriate provider."""
+        vendor = self._detect_voice_vendor(model_id)
+        if vendor == "openai":
+            return self._call_openai_audio_tts(model_id, text, voice, **kwargs)
+        elif vendor == "elevenlabs":
+            return self._call_elevenlabs(model_id, text, voice, **kwargs)
+        elif vendor == "deepgram":
+            return self._call_deepgram_tts(model_id, text, **kwargs)
+        else:
+            return self._call_openai_audio_tts(model_id, text, voice, **kwargs)
+
+    def _dispatch_voice_stt(
+        self, model_id: str, audio: Any, language: Optional[str] = None, **kwargs
+    ) -> Any:
+        """Dispatch STT to the appropriate provider."""
+        vendor = self._detect_voice_vendor(model_id)
+        if vendor == "openai":
+            return self._call_openai_audio_stt(model_id, audio, language, **kwargs)
+        elif vendor == "deepgram":
+            return self._call_deepgram_stt(model_id, audio, language, **kwargs)
+        else:
+            return self._call_openai_audio_stt(model_id, audio, language, **kwargs)
+
+    def _call_openai_audio_tts(
+        self, model: str, text: str, voice: Optional[str] = None, **kwargs
+    ) -> Any:
+        """Call OpenAI TTS API."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("Install 'openai' package: pip install openai")
+
+        client = OpenAI()
+        return client.audio.speech.create(
+            model=model, input=text, voice=voice or "alloy", **kwargs
+        )
+
+    def _call_openai_audio_stt(
+        self, model: str, audio: Any, language: Optional[str] = None, **kwargs
+    ) -> Any:
+        """Call OpenAI Whisper STT API."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("Install 'openai' package: pip install openai")
+
+        client = OpenAI()
+        call_kwargs = {"model": model, "file": audio, **kwargs}
+        if language:
+            call_kwargs["language"] = language
+        return client.audio.transcriptions.create(**call_kwargs)
+
+    def _call_elevenlabs(
+        self, model: str, text: str, voice: Optional[str] = None, **kwargs
+    ) -> Any:
+        """Call ElevenLabs TTS API."""
+        try:
+            from elevenlabs.client import ElevenLabs as EL
+        except ImportError:
+            raise ImportError("Install 'elevenlabs' package: pip install elevenlabs")
+
+        client = EL()
+        return client.generate(text=text, voice=voice or "Rachel", model=model, **kwargs)
+
+    def _call_deepgram_tts(self, model: str, text: str, **kwargs) -> Any:
+        """Call Deepgram TTS API."""
+        try:
+            from deepgram import DeepgramClient
+        except ImportError:
+            raise ImportError("Install 'deepgram-sdk' package: pip install deepgram-sdk")
+
+        client = DeepgramClient()
+        return client.speak.v("1").save(text, model=model, **kwargs)
+
+    def _call_deepgram_stt(
+        self, model: str, audio: Any, language: Optional[str] = None, **kwargs
+    ) -> Any:
+        """Call Deepgram STT API."""
+        try:
+            from deepgram import DeepgramClient, PrerecordedOptions
+        except ImportError:
+            raise ImportError("Install 'deepgram-sdk' package: pip install deepgram-sdk")
+
+        client = DeepgramClient()
+        options = PrerecordedOptions(model=model)
+        if language:
+            options.language = language
+        return client.listen.rest.v("1").transcribe_file({"buffer": audio}, options)
+
     def _dispatch(
         self,
         model_id: str,

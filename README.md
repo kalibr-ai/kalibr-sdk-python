@@ -140,6 +140,9 @@ pip install kalibr
 
 # For accurate token counting
 pip install kalibr[tokens]
+
+# For voice AI (ElevenLabs, Deepgram)
+pip install kalibr[voice]
 ```
 
 ## Setup
@@ -325,6 +328,48 @@ chain = prompt | llm | parser
 pip install kalibr[crewai]          # CrewAI
 pip install kalibr[openai-agents]   # OpenAI Agents SDK
 pip install kalibr[langchain-all]   # LangChain with all providers
+pip install kalibr[voice]           # ElevenLabs + Deepgram voice AI
+pip install kalibr[livekit]         # LiveKit Agents
+pip install kalibr[pipecat]         # Pipecat pipelines
+```
+
+## Voice AI
+
+Route and trace TTS/STT operations with the same outcome-learning loop:
+
+```python
+from kalibr import Router
+
+# TTS routing
+tts_router = Router(
+    goal="narrate_article",
+    paths=["tts-1", "eleven_multilingual_v2"],
+    success_when=lambda out: out is not None,
+)
+result = tts_router.synthesize("Hello from Kalibr!", voice="alloy")
+# result.audio, result.cost_usd, result.kalibr_trace_id
+
+# STT routing
+stt_router = Router(goal="transcribe_call", paths=["whisper-1"])
+result = stt_router.transcribe(audio_bytes, audio_duration_seconds=150.0)
+# result.text, result.cost_usd, result.kalibr_trace_id
+```
+
+Auto-instrument voice SDKs alongside text LLMs:
+
+```python
+from kalibr import auto_instrument
+auto_instrument(["openai", "elevenlabs", "deepgram"])
+# OpenAI TTS/Whisper, ElevenLabs, and Deepgram calls are now traced with cost tracking
+```
+
+Voice agent framework instrumentation:
+
+```python
+from kalibr_voice import KalibrLiveKitInstrumentor, KalibrPipecatInstrumentor
+
+KalibrLiveKitInstrumentor().instrument()   # Trace LiveKit Agent STT→LLM→TTS pipeline
+KalibrPipecatInstrumentor().instrument()   # Trace Pipecat processors
 ```
 
 ## Auto-Instrumentation
