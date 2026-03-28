@@ -394,6 +394,45 @@ router.report(
 - Kalibr never modifies prompts or response content. It only routes and records outcomes.
 - Invalid failure_category raises ValueError with valid options.
 
+## Thread safety
+
+Router instances are NOT thread-safe. Create one Router per request context.
+
+In async Python apps, create Router inside the async handler, not at module level:
+
+```python
+# CORRECT
+async def handle(messages):
+    router = Router(goal="my_goal", paths=["gpt-4o-mini", "claude-haiku"])
+    return await router.completion(messages)
+
+# WRONG — shared state across concurrent requests
+router = Router(goal="my_goal", paths=["gpt-4o-mini"])  # module level
+```
+
+## Cold start behavior
+
+0 outcomes: traffic split evenly across all paths.
+1-20 outcomes per path: Kalibr explores, no winner declared yet.
+20+ outcomes per path: Thompson Sampling converges, traffic shifts to winning paths.
+
+Monitor sample_count and confidence via get_insights(). Add paths or exploration traffic if confidence is low.
+
+## Fallback path ordering
+
+If the intelligence service is temporarily unreachable, Kalibr falls back to the FIRST path in your list. Put your most reliable, always-available path first:
+
+```python
+router = Router(
+    goal="classify",
+    paths=[
+        "gpt-4o-mini",    # first = emergency fallback
+        "deepseek-chat",   # preferred (lower cost)
+        "claude-haiku",    # alternative
+    ]
+)
+```
+
 ## What Kalibr is NOT
 
 - NOT observability — Langfuse, AgentOps, Arize surface dashboards to humans. Kalibr feeds outcome data back into your routing decisions.
