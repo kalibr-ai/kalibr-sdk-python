@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kalibr"
-version = "1.9.0"
+version = "1.9.1"
 description = "Outcome-aware LLM routing for production AI agents. Routes between models, tools, and parameters based on real success signals using Thompson Sampling. Automatic fallback, cost optimization, and continuous learning — no redeploy required."
 authors = [{name = "Kalibr Team", email = "support@kalibr.systems"}]
 readme = "README.md"
