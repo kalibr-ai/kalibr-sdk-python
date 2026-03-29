@@ -36,7 +36,7 @@ CLI Usage:
     kalibr version                       # Show version
 """
 
-__version__ = "1.9.1"
+__version__ = "1.9.2"
 
 # Auto-instrument LLM SDKs on import (can be disabled via env var)
 import os
