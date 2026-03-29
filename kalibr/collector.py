@@ -220,7 +220,7 @@ class KalibrHTTPSpanExporter(SpanExporter):
             "input_tokens": input_tokens or 0,
             "output_tokens": output_tokens or 0,
             "total_tokens": total_tokens or 0,
-            "cost_usd": self._get_attr(span, "llm.cost_usd", "gen_ai.usage.cost", default=0.0),
+            "cost_usd": round(self._get_attr(span, "llm.cost_usd", "gen_ai.usage.cost", default=0.0), 4),
             "latency_ms": self._get_attr(span, "llm.latency_ms", default=duration_ms),
             "duration_ms": duration_ms,
             "status": status,

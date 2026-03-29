@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-03-29
+
+### Fixed
+
+- Added missing HuggingFace model pricing: Llama 3.3 70B, Mixtral 8x22B, Qwen2.5 72B, DeepSeek R1
+- Added HuggingFace fuzzy matching in `normalize_model_name()` for common model name variations
+- Extended `_detect_vendor()` in OpenAI instrumentation to route Llama, Mixtral, and Qwen models to HuggingFace pricing
+- Increased cost precision to 4 decimal places in collector to prevent sub-cent costs displaying as $0.00
+
 ## [1.8.0] - 2026-03-26
 
 ### Added
