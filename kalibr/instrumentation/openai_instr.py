@@ -35,6 +35,12 @@ def _detect_vendor(model: str) -> str:
     model_lower = model.lower()
     if model_lower.startswith("deepseek-"):
         return "deepseek"
+    if model_lower.startswith("meta-llama/") or "llama-3" in model_lower:
+        return "huggingface"
+    if model_lower.startswith("mistralai/") or "mixtral" in model_lower:
+        return "huggingface"
+    if model_lower.startswith("qwen/") or model_lower.startswith("qwen2"):
+        return "huggingface"
     return "openai"
 
 

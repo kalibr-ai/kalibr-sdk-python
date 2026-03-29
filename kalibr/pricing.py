@@ -58,6 +58,10 @@ MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
         # Mistral models
         "mistralai/mistral-7b-instruct-v0.3": {"input": 0.20, "output": 0.20},
         "mistralai/mixtral-8x7b-instruct-v0.1": {"input": 0.60, "output": 0.60},
+        "meta-llama/llama-3.3-70b-instruct": {"input": 0.90, "output": 0.90},
+        "mistralai/mixtral-8x22b-v0.1": {"input": 1.20, "output": 1.20},
+        "qwen/qwen2.5-72b-instruct": {"input": 0.90, "output": 0.90},
+        "deepseek/deepseek-r1": {"input": 0.55, "output": 2.19},
         # Default fallback for unknown HuggingFace models
     },
     "deepseek": {
@@ -193,6 +197,21 @@ def normalize_model_name(vendor: str, model_name: str) -> str:
             return "gemini-1.5-pro"
         elif "gemini-1.0-pro" in model_lower or "gemini-pro" in model_lower:
             return "gemini-pro"
+
+    # HuggingFace fuzzy matching
+    elif vendor == "huggingface":
+        if "llama-3.3-70b" in model_lower:
+            return "meta-llama/llama-3.3-70b-instruct"
+        elif "llama-3.1-70b" in model_lower:
+            return "meta-llama/llama-3.1-70b-instruct"
+        elif "llama-3-70b" in model_lower:
+            return "meta-llama/llama-3-70b-instruct"
+        elif "mixtral-8x22b" in model_lower:
+            return "mistralai/mixtral-8x22b-v0.1"
+        elif "mixtral-8x7b" in model_lower:
+            return "mistralai/mixtral-8x7b-instruct-v0.1"
+        elif "qwen2.5-72b" in model_lower:
+            return "qwen/qwen2.5-72b-instruct"
 
     # DeepSeek fuzzy matching
     elif vendor == "deepseek":
