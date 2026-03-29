@@ -419,7 +419,11 @@ class Router:
         except ImportError:
             raise ImportError("Install 'huggingface_hub' package: pip install huggingface_hub")
 
-        client = InferenceClient()
+        token = os.environ.get("HF_API_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        client = InferenceClient(
+            token=token,
+            base_url="https://router.huggingface.co",
+        )
 
         # Map task names to InferenceClient methods.
         # Must stay in sync with PATCHED_METHODS in huggingface_instr.py (all 17).
@@ -970,14 +974,26 @@ class Router:
         return self._google_to_openai_response(response, model)
 
     def _call_huggingface(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
-        """Call HuggingFace Inference API and convert response to OpenAI format."""
+        """Call HuggingFace Inference API and convert response to OpenAI format.
+
+        HuggingFace migrated from api-inference.huggingface.co (now returns HTTP 410)
+        to router.huggingface.co. InferenceClient >= 0.x picks this up automatically
+        when no explicit base_url is set, but we explicitly set the router endpoint
+        to guarantee correct routing regardless of huggingface_hub version.
+        """
         try:
             from huggingface_hub import InferenceClient
         except ImportError:
             raise ImportError("Install 'huggingface_hub' package: pip install huggingface_hub")
 
         token = os.environ.get("HF_API_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        client = InferenceClient(token=token)
+
+        # Use the new router endpoint explicitly.
+        # api-inference.huggingface.co returns HTTP 410 as of early 2026.
+        client = InferenceClient(
+            token=token,
+            base_url="https://router.huggingface.co",
+        )
 
         call_kwargs = {"model": model, "messages": messages, **kwargs}
 
