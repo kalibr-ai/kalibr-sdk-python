@@ -13,8 +13,89 @@ console = Console()
 BACKEND_URL = os.environ.get("KALIBR_BACKEND_URL", "https://kalibr-backend.fly.dev")
 
 
-def auth() -> None:
+def _write_env(api_key: str, tenant_id: str) -> str:
+    """Write KALIBR_API_KEY and KALIBR_TENANT_ID to .env, returning the path."""
+    env_path = os.path.join(os.getcwd(), ".env")
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            lines = f.readlines()
+
+    key_map = {
+        "KALIBR_API_KEY": api_key,
+        "KALIBR_TENANT_ID": tenant_id,
+    }
+    updated: set[str] = set()
+    new_lines = []
+    for line in lines:
+        replaced = False
+        for k, v in key_map.items():
+            if line.startswith(f"{k}="):
+                new_lines.append(f"{k}={v}\n")
+                updated.add(k)
+                replaced = True
+                break
+        if not replaced:
+            new_lines.append(line)
+
+    for k, v in key_map.items():
+        if k not in updated:
+            new_lines.append(f"{k}={v}\n")
+
+    with open(env_path, "w") as f:
+        f.writelines(new_lines)
+
+    return env_path
+
+
+def _agent_signup(email: str | None) -> None:
+    """Handle --agent signup flow."""
+    if not email:
+        console.print("[red]Error: Agent signup requires --email <human_email>[/red]")
+        console.print("  Your human's email address so they can claim the dashboard.")
+        raise typer.Exit(1)
+
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/api/cli-auth/signup-and-provision",
+            json={"agent_name": "kalibr-agent", "human_email": email},
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        console.print(f"[red]Failed to connect: {e}[/red]")
+        raise typer.Exit(1)
+
+    if resp.status_code == 409:
+        console.print(f"Account already exists for {email}. Visit dashboard.kalibr.systems/sign-in")
+        raise typer.Exit(1)
+
+    if resp.status_code != 200:
+        try:
+            detail = resp.json().get("detail", resp.text)
+        except Exception:
+            detail = resp.text or f"HTTP {resp.status_code}"
+        console.print(f"[red]Error: {detail}[/red]")
+        raise typer.Exit(1)
+
+    data = resp.json()
+    api_key = data["api_key"]
+    tenant_id = data["tenant_id"]
+
+    _write_env(api_key, tenant_id)
+
+    console.print(f"[bold green]✓ Account created. {email} will receive an email to access the dashboard.[/bold green]")
+    console.print("  Next: run 'kalibr init' to instrument your code")
+
+
+def auth(
+    agent: bool = typer.Option(False, "--agent", help="Autonomous agent signup (skip device code flow)"),
+    email: str = typer.Option(None, "--email", help="Human email for agent signup"),
+) -> None:
     """Link this agent to your Kalibr account. Human enters a code in the browser."""
+
+    if agent:
+        _agent_signup(email)
+        return
 
     # Step 1: Request device code
     try:
@@ -73,36 +154,7 @@ def auth() -> None:
                         api_key = result["api_key"]
                         tenant_id = result["tenant_id"]
 
-                        # Write to .env
-                        env_path = os.path.join(os.getcwd(), ".env")
-                        lines = []
-                        if os.path.exists(env_path):
-                            with open(env_path) as f:
-                                lines = f.readlines()
-
-                        key_map = {
-                            "KALIBR_API_KEY": api_key,
-                            "KALIBR_TENANT_ID": tenant_id,
-                        }
-                        updated = set()
-                        new_lines = []
-                        for line in lines:
-                            replaced = False
-                            for k, v in key_map.items():
-                                if line.startswith(f"{k}="):
-                                    new_lines.append(f"{k}={v}\n")
-                                    updated.add(k)
-                                    replaced = True
-                                    break
-                            if not replaced:
-                                new_lines.append(line)
-
-                        for k, v in key_map.items():
-                            if k not in updated:
-                                new_lines.append(f"{k}={v}\n")
-
-                        with open(env_path, "w") as f:
-                            f.writelines(new_lines)
+                        env_path = _write_env(api_key, tenant_id)
 
                         console.print()
                         console.print("[bold green]Agent linked![/bold green]")
