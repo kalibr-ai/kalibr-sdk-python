@@ -99,7 +99,7 @@ from .intelligence import (
     get_insights,
     FAILURE_CATEGORIES,
 )
-from .router import Router
+from .router import Router, TraceHandle
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
     # Setup OpenTelemetry collector
@@ -180,4 +180,5 @@ __all__ = [
     "get_insights",
     "FAILURE_CATEGORIES",
     "Router",
+    "TraceHandle",
 ]
