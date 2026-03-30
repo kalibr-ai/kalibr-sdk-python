@@ -5,6 +5,7 @@ Kalibr Router - Intelligent model routing with outcome learning.
 import os
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from kalibr.provision import resolve_credentials
@@ -44,6 +45,14 @@ def _create_context_with_trace_id(trace_id_hex: str) -> Optional[Context]:
     except (ValueError, TypeError) as e:
         logger.warning(f"Could not create OTel context with trace_id: {e}")
         return None
+
+
+@dataclass
+class TraceHandle:
+    """Handle for a manually-started trace. Pass trace.id to router.report()."""
+    id: str
+    model_id: str
+    path: Optional[str]
 
 
 class Router:
@@ -592,6 +601,36 @@ class Router:
         )
 
         return round(min(1.0, max(0.0, score)), 3)
+
+    def start_trace(
+        self,
+        model_id: str,
+        path: Optional[str] = None,
+    ) -> "TraceHandle":
+        """
+        Manually start a trace for an external model call not natively supported by Kalibr.
+
+        Use this when calling model providers directly (HuggingFace InferenceClient,
+        Together AI, Ollama, etc.) that are not routed through completion() or execute().
+
+        Args:
+            model_id: The model being called (e.g., "deepseek-ai/DeepSeek-R1")
+            path: Optional path identifier for this execution path
+
+        Returns:
+            TraceHandle with .id — pass this to router.report(trace_id=trace.id)
+
+        Example::
+
+            trace = router.start_trace(model_id="deepseek-ai/DeepSeek-R1", path="hf")
+            output = my_hf_client.chat.completions.create(model="deepseek-ai/DeepSeek-R1", messages=messages)
+            router.report(success=True, trace_id=trace.id)
+        """
+        trace_id = uuid.uuid4().hex
+        self._last_trace_id = trace_id
+        self._last_model_id = model_id
+        self._outcome_reported = False
+        return TraceHandle(id=trace_id, model_id=model_id, path=path)
 
     def report(
         self,
