@@ -83,7 +83,18 @@ def _agent_signup(email: str | None) -> None:
 
     _write_env(api_key, tenant_id)
 
-    console.print(f"[bold green]✓ Account created. {email} will receive an email to access the dashboard.[/bold green]")
+    claim_url = data.get("claim_url")
+    if claim_url:
+        console.print()
+        console.print("[bold]Human account claim link:[/bold]")
+        console.print(f"  [cyan]{claim_url}[/cyan]")
+        console.print()
+        console.print(f"  Send this to {email}.")
+        console.print("  One click. Sets their password. Sees their agent data.")
+        console.print("  [dim]Expires in 24 hours.[/dim]")
+    else:
+        console.print(f"[bold green]✓ Account created for {email}[/bold green]")
+        console.print(f"  Claim account at: [cyan]https://dashboard.kalibr.systems/forgot-password[/cyan]")
     console.print("  Next: run 'kalibr init' to instrument your code")
 
 
