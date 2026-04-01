@@ -44,6 +44,22 @@ def verify() -> None:
             console.print("  Fix: Ensure your KALIBR_API_KEY and KALIBR_TENANT_ID are valid.")
             all_ok = False
 
+    # Step 4: Check provider API keys (warning only)
+    provider_keys = {
+        "ANTHROPIC_API_KEY": "for claude-* models",
+        "OPENAI_API_KEY": "for gpt-* and o1-*, o3-* models",
+        "DEEPSEEK_API_KEY": "for deepseek-* models",
+        "HF_TOKEN": "for HuggingFace models",
+    }
+    has_provider = any(os.environ.get(k) for k in provider_keys)
+    if not has_provider:
+        console.print()
+        console.print("[yellow]⚠️  No provider API keys detected.[/yellow]")
+        console.print("[yellow]     Router.completion() requires at least one:[/yellow]")
+        for key, desc in provider_keys.items():
+            console.print(f"[yellow]       {key:<20s} — {desc}[/yellow]")
+        console.print("[yellow]     Export the key(s) for the models you plan to use.[/yellow]")
+
     # Final result
     if all_ok:
         console.print()

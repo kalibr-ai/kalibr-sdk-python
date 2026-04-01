@@ -66,8 +66,19 @@ def _agent_signup(email: str | None) -> None:
         raise typer.Exit(1)
 
     if resp.status_code == 409:
-        console.print(f"Account already exists for {email}. Visit dashboard.kalibr.systems/sign-in")
-        raise typer.Exit(1)
+        if os.environ.get("KALIBR_API_KEY"):
+            console.print(
+                f"Account already exists for {email}. "
+                "Credentials already configured — run: kalibr verify"
+            )
+            raise typer.Exit(0)
+        else:
+            console.print(
+                f"Account already exists for {email}. "
+                "Retrieve credentials at: dashboard.kalibr.systems/api/me/credentials"
+            )
+            console.print("Or run: kalibr auth (device code flow)")
+            raise typer.Exit(1)
 
     if resp.status_code != 200:
         try:
