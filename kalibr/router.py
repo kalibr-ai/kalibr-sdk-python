@@ -234,6 +234,11 @@ class Router:
         Returns:
             OpenAI-compatible ChatCompletion response with added attribute:
                 - kalibr_trace_id: Trace ID for explicit outcome reporting
+
+        Note: If success_when or score_when was provided at Router init, outcomes are reported
+            automatically after completion(). Do not call report() manually in that case.
+            If neither was provided, call router.report(success=True/False) after evaluating
+            the output.
         """
         from kalibr.intelligence import decide
 
@@ -642,6 +647,10 @@ class Router:
     ):
         """
         Report outcome for the last completion.
+
+        Only call this if success_when/score_when were NOT provided at Router init.
+        If they were provided, outcomes are reported automatically after completion()
+        and calling report() again will trigger a warning.
 
         Args:
             success: Whether the task succeeded
