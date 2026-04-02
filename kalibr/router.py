@@ -922,8 +922,18 @@ class Router:
             return self._call_google(model_id, messages, tools, **kwargs)
         elif model_id.startswith("deepseek-"):
             return self._call_deepseek(model_id, messages, tools, **kwargs)
+        # Handle vendor-prefixed model IDs (e.g., "openai/gpt-4o-mini" -> route to OpenAI)
+        elif model_id.startswith("openai/"):
+            return self._call_openai(model_id.split("/", 1)[1], messages, tools, **kwargs)
+        elif model_id.startswith("anthropic/"):
+            return self._call_anthropic(model_id.split("/", 1)[1], messages, tools, **kwargs)
+        elif model_id.startswith("deepseek/"):
+            return self._call_deepseek(model_id.split("/", 1)[1], messages, tools, **kwargs)
+        elif model_id.startswith("mistralai/") or model_id.startswith("meta-llama/") or model_id.startswith("Qwen/") or model_id.startswith("facebook/"):
+            # These are HuggingFace org prefixes
+            return self._call_huggingface(model_id, messages, tools, **kwargs)
         elif "/" in model_id and not model_id.startswith(("models/", "ft:")):
-            # org/model format = HuggingFace
+            # org/model format = HuggingFace (catch-all for unknown org prefixes)
             return self._call_huggingface(model_id, messages, tools, **kwargs)
         else:
             # Default to OpenAI-compatible
