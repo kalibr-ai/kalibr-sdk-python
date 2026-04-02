@@ -906,6 +906,16 @@ class Router:
             options.language = language
         return client.listen.rest.v("1").transcribe_file({"buffer": audio}, options)
 
+    # Vendor prefix normalization: "vendor/model" → strip prefix and route to vendor
+    # Prevents openai/gpt-4o-mini, deepseek/deepseek-chat, anthropic/claude-* etc
+    # from being misrouted to HuggingFace.
+    _VENDOR_PREFIX_MAP = {
+        "openai/": "openai",
+        "anthropic/": "anthropic",
+        "google/": "google",
+        "deepseek/": "deepseek",
+    }
+
     def _dispatch(
         self,
         model_id: str,
@@ -913,7 +923,28 @@ class Router:
         tools: Optional[Any] = None,
         **kwargs
     ) -> Any:
-        """Dispatch to the appropriate provider."""
+        """Dispatch to the appropriate provider.
+
+        Handles both bare model IDs (gpt-4o, claude-sonnet-...) and
+        vendor-prefixed format strings (openai/gpt-4o-mini, deepseek/deepseek-chat).
+        Vendor-prefixed formats are normalized before routing to prevent
+        misrouting to HuggingFace.
+        """
+        # Normalize vendor/model prefix format (e.g. openai/gpt-4o-mini → gpt-4o-mini, openai)
+        for prefix, vendor in self._VENDOR_PREFIX_MAP.items():
+            if model_id.startswith(prefix):
+                bare_model = model_id[len(prefix):]
+                logger.debug(f"Normalized vendor prefix '{prefix}' → routing {bare_model} to {vendor}")
+                if vendor == "openai":
+                    return self._call_openai(bare_model, messages, tools, **kwargs)
+                elif vendor == "anthropic":
+                    return self._call_anthropic(bare_model, messages, tools, **kwargs)
+                elif vendor == "google":
+                    return self._call_google(bare_model, messages, tools, **kwargs)
+                elif vendor == "deepseek":
+                    return self._call_deepseek(bare_model, messages, tools, **kwargs)
+
+        # Standard prefix checks for bare model IDs
         if model_id.startswith(("gpt-", "o1-", "o3-")):
             return self._call_openai(model_id, messages, tools, **kwargs)
         elif model_id.startswith("claude-"):
@@ -923,7 +954,7 @@ class Router:
         elif model_id.startswith("deepseek-"):
             return self._call_deepseek(model_id, messages, tools, **kwargs)
         elif "/" in model_id and not model_id.startswith(("models/", "ft:")):
-            # org/model format = HuggingFace
+            # org/model format = HuggingFace (e.g. meta-llama/Llama-3.2-3B-Instruct)
             return self._call_huggingface(model_id, messages, tools, **kwargs)
         else:
             # Default to OpenAI-compatible
