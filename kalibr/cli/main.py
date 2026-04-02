@@ -11,6 +11,7 @@ from kalibr.cli.run import run
 # Import command functions
 from kalibr.cli.serve import serve
 from kalibr.cli.signup_cmd import signup
+from kalibr.cli.status_cmd import status as _status_cmd
 from kalibr.cli.verify_cmd import verify
 from rich.console import Console
 
@@ -32,6 +33,7 @@ app.command(name="verify")(verify)
 app.command(name="signup")(signup)
 app.command(name="auth")(auth)
 app.command(name="prompt")(prompt)
+app.command(name="status")(_status_cmd)
 
 
 @app.command()
@@ -65,12 +67,6 @@ def update_schemas():
     console.print("1. pip install --upgrade kalibr")
     console.print("2. Restart your kalibr serve command")
     console.print("3. Schemas will be auto-regenerated")
-
-
-@app.command()
-def status():
-    """Check status of a deployed Kalibr app."""
-    console.print("[yellow]📊 Status checking coming soon[/yellow]")
 
 
 if __name__ == "__main__":
