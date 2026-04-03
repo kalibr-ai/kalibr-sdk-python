@@ -1,21 +1,25 @@
 # Kalibr Python SDK
 
-Kalibr lets agents choose the optimal model + tools for any task, across any modality, as they run in production.
+You're spending too much to run your agents. Kalibr routes every request to lower-cost model and tool paths without degrading performance.
 
-Open source SDK. Hosted optimization intelligence.
+Open source SDK. Hosted routing intelligence.
 
-## Features
+[![PyPI version](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
+[![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
+[![License](https://img.shields.io/github/license/kalibr-ai/kalibr-sdk-python)](LICENSE)
 
-* **Outcome-aware routing** — Routes each goal to the model+tool path that is actually succeeding in production
-* **Continuous optimization** — Learns from real outcomes using Thompson Sampling. Adapts as models degrade, tools fail, or costs shift
-* **Auto-instrumentation** — Traces OpenAI, Anthropic, Google AI, and DeepSeek calls with zero code changes. DeepSeek spans and costs are attributed correctly without a separate instrumentor.
-* **TraceCapsule** — Cross-agent context propagation for multi-agent systems
-* **Cost & token tracking** — Real-time cost calculation and token monitoring across all providers
-* **Any model, any modality** — Text LLMs, voice, image, embeddings, classification, translation, anything on HuggingFace
-* **HuggingFace integration** — One instrumentor covers all 17 task types across every modality
-* **Framework integrations** — LangChain, CrewAI, OpenAI Agents SDK
+## What it does
 
-## Developers — hand this to your coding agent
+* **Routes to lower-cost paths automatically** — Simple requests move to cheaper models. Hard requests stay on stronger ones. No rules to write.
+* **Adapts as conditions change** — When a model degrades, a tool fails, or pricing shifts, Kalibr moves traffic to a better path automatically.
+* **Learns from production** — Uses Thompson Sampling on real outcomes, not static benchmarks. Gets better with every request.
+* **No manual retuning** — No config changes, no dashboards to watch, no brittle routing rules.
+* **Auto-instrumentation** — Traces OpenAI, Anthropic, Google, and DeepSeek calls with zero code changes.
+* **Any model, any modality** — Text, voice, image, embeddings, classification. Any provider, any task type.
+* **Full tracing** — See exactly why Kalibr made each routing decision.
+* **Framework integrations** — LangChain, CrewAI, OpenAI Agents SDK, LiveKit, Pipecat.
+
+## Quick install — hand this to your coding agent
 
 ```
 pip install kalibr
@@ -125,12 +129,6 @@ response = router.completion(messages=[{"role": "user", "content": "Is this an I
 
 Supported models: `deepseek-chat` (V3), `deepseek-reasoner` (R1), `deepseek-coder`. Kalibr attributes costs and spans correctly for each.
 
-`pip install kalibr`
-
-[![PyPI version](https://img.shields.io/pypi/v/kalibr)](https://pypi.org/project/kalibr/)
-[![Python](https://img.shields.io/pypi/pyversions/kalibr)](https://pypi.org/project/kalibr/)
-[![License](https://img.shields.io/github/license/kalibr-ai/kalibr-sdk-python)](LICENSE)
-
 ---
 
 ## Installation
@@ -178,7 +176,6 @@ kalibr init
 
 ```bash
 kalibr auth          # link agent to your Kalibr account (device code — recommended)
-kalibr signup EMAIL  # DEPRECATED: use kalibr auth instead
 kalibr init          # scan codebase, wrap bare LLM calls with Router, provision credentials
 kalibr verify        # check credentials and Router connectivity
 kalibr prompt        # copy Claude Code / Cursor integration prompt to clipboard
