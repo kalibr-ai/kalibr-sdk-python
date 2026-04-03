@@ -77,6 +77,38 @@ Once added, your coding agent will automatically:
 - Always put `import kalibr` first
 - Include outcome reporting in every agent it builds
 
+## OpenClaw / Hermes Agent Setup
+
+If you're running an [OpenClaw](https://openclaw.ai) or Hermes orchestrator agent, use the `--openclaw` flag to get a **fully autonomous onboarding prompt** — zero human steps required after pasting it in.
+
+```bash
+kalibr prompt --openclaw
+```
+
+This outputs (and copies to your clipboard) a complete setup sequence that instructs the agent to:
+
+1. `pip install kalibr huggingface_hub`
+2. Run `kalibr auth --agent --email <your-email>` — headless account provisioning, no browser required
+3. Source credentials into `~/.zshrc` or `~/.bashrc`
+4. `openclaw plugin install kalibr && openclaw plugin configure kalibr`
+5. Scaffold `~/clawd/` workspace: `SOUL.md`, `USER.md`, `HEARTBEAT.md`, `AGENTS.md` with routing table
+6. Create `~/clawd/kalibr-integration/` — downloads `kalibr_pipeline.py`, `kalibr_taxonomy.py`, `kalibr_eval.py` from this repo's `examples/`
+7. `kalibr init && kalibr verify`
+8. Smoke-test `classify_and_route()`
+9. Report done with dashboard link, claim URL, and optional provider key prompts
+
+**Usage:**
+
+```bash
+# Standard prompt (Claude Code / Cursor integration)
+kalibr prompt
+
+# Full autonomous onboarding for OpenClaw / Hermes
+kalibr prompt --openclaw
+```
+
+Once set up, your OpenClaw agent will automatically call `classify_and_route()` per task, route to the cheapest model that succeeds, and report outcomes back to Kalibr — all without manual intervention.
+
 ## Agent Starter Template
 
 Need a production-ready agent scaffold with Kalibr already wired in?
