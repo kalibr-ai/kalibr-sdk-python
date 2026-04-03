@@ -22,9 +22,7 @@ Then run autonomously — zero human steps:
 
 1. pip install kalibr huggingface_hub
 
-2. kalibr auth --agent --email <ASK_USER_FOR_EMAIL>
-   Ask the user: "What email should I use to provision your Kalibr account?"
-   Then run: kalibr auth --agent --email <that_email>
+2. kalibr auth --agent --email <YOUR_EMAIL>
 
 3. Source credentials into shell:
    - If ~/.zshrc exists: append KALIBR_API_KEY and KALIBR_TENANT_ID exports
@@ -71,13 +69,27 @@ def prompt(
         "--openclaw",
         help="Output the full autonomous OpenClaw / Hermes agent onboarding prompt.",
     ),
+    email: Optional[str] = typer.Option(
+        None,
+        "--email",
+        help="Pre-fill user email for OpenClaw onboarding (avoids prompting). Example: kalibr prompt --openclaw --email user@example.com",
+    ),
 ) -> None:
     """Output a ready-to-paste Claude Code / Cursor integration prompt.
 
     With --openclaw: outputs the full autonomous onboarding sequence for
     OpenClaw / Hermes agent orchestrators. Zero human steps after pasting.
     """
-    text = OPENCLAW_PROMPT_TEXT if openclaw else PROMPT_TEXT
+    if openclaw:
+        if email:
+            text = OPENCLAW_PROMPT_TEXT.replace(
+                "kalibr auth --agent --email <YOUR_EMAIL>",
+                f"kalibr auth --agent --email {email}",
+            )
+        else:
+            text = OPENCLAW_PROMPT_TEXT
+    else:
+        text = PROMPT_TEXT
 
     console.print(text)
     console.print()
