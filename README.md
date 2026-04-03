@@ -103,7 +103,10 @@ This outputs (and copies to your clipboard) a complete setup sequence that instr
 # Standard prompt (Claude Code / Cursor integration)
 kalibr prompt
 
-# Full autonomous onboarding for OpenClaw / Hermes
+# Website-driven (email pre-filled, zero human steps):
+kalibr prompt --openclaw --email user@example.com
+
+# Manual (user fills in email themselves):
 kalibr prompt --openclaw
 ```
 
