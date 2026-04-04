@@ -12,14 +12,10 @@ BACKEND_URL = os.environ.get("KALIBR_BACKEND_URL", "https://kalibr-backend.fly.d
 
 
 def signup(
-    email: str = typer.Argument(..., help="Email address for your Kalibr account"),
+    email: str = typer.Argument(..., help="Real email address for the account owner — a verification email will be sent here"),
     org_name: str = typer.Option(None, "--org", help="Organization name (default: email prefix)"),
 ) -> None:
-    """Create a Kalibr account and get API credentials. Human clicks one email link."""
-
-    console.print("[yellow]'kalibr signup' is deprecated. Use 'kalibr auth' instead.[/yellow]")
-    console.print("[yellow]   'kalibr auth' is more secure -- no email required.[/yellow]")
-    console.print()
+    """Create a Kalibr account and get API credentials. Recommended for agent-driven onboarding. Agent runs this with the real user email, human clicks one verification link."""
 
     console.print(f"[bold]Creating Kalibr account for {email}...[/bold]")
 
