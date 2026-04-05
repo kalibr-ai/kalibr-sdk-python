@@ -62,6 +62,34 @@ response = router.completion(
 )
 ```
 
+### Cut your OpenClaw token costs after the Anthropic billing change
+
+Anthropic's April 4, 2026 billing change removed OAuth subscription access for OpenClaw. Users on API keys are now paying per-token for everything their agent does.
+
+Most agent workloads are mixed: some tasks need a frontier model, most do not. Routing everything to Sonnet or Opus at API rates when DeepSeek or Llama can handle the same work is the main driver of high bills.
+
+Kalibr classifies each task before it reaches the model and routes it to the cheapest option that passes structural evals for that task type. The routing improves over time as outcomes feed back into the bandit.
+
+**Quickstart with OpenClaw:**
+
+```bash
+pip install kalibr
+kalibr prompt --openclaw --email you@example.com
+# paste the output into your OpenClaw agent
+```
+
+**Manual wiring:**
+
+```python
+import kalibr  # must be first import
+from kalibr_integration.kalibr_pipeline import classify_and_route
+
+output = classify_and_route("Scrape the top 10 results from this search page")
+# routes to DeepSeek automatically, 10-50x cheaper than Sonnet for this task type
+```
+
+Benchmark: 75% lower model spend vs. routing everything to Sonnet, measured across 500k requests and 12 task types. Free tier at dashboard.kalibr.systems.
+
 ## Coding Agent Setup
 
 If you're using Claude Code, Cursor, Windsurf, or any coding agent to build with Kalibr, add the appropriate context file to your project so the agent generates Router-based code by default.
