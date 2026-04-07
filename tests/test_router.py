@@ -61,6 +61,52 @@ class TestRouterDispatch:
         mock_anthropic.assert_called_once()
 
 
+class TestTavilyRouting:
+    @patch("kalibr.router.Router._call_tavily")
+    def test_routes_tavily_basic(self, mock_tavily):
+        mock_tavily.return_value = MagicMock()
+        router = Router(goal="test", paths=["tavily/basic"], auto_register=False)
+        router._dispatch("tavily/basic", [{"role": "user", "content": "AI news"}], None)
+        mock_tavily.assert_called_once()
+        assert mock_tavily.call_args[0][0] == "basic"
+
+    @patch("kalibr.router.Router._call_tavily")
+    def test_routes_tavily_advanced(self, mock_tavily):
+        mock_tavily.return_value = MagicMock()
+        router = Router(goal="test", paths=["tavily/advanced"], auto_register=False)
+        router._dispatch("tavily/advanced", [{"role": "user", "content": "AI news"}], None)
+        mock_tavily.assert_called_once()
+        assert mock_tavily.call_args[0][0] == "advanced"
+
+    def test_tavily_missing_api_key(self):
+        import os
+        router = Router(goal="test", paths=["tavily/basic"], auto_register=False)
+        env_backup = os.environ.pop("TAVILY_API_KEY", None)
+        try:
+            with pytest.raises(EnvironmentError, match="TAVILY_API_KEY"):
+                router._call_tavily("basic", [{"role": "user", "content": "test"}], None)
+        finally:
+            if env_backup:
+                os.environ["TAVILY_API_KEY"] = env_backup
+
+    @patch("httpx.post")
+    def test_tavily_response_shape(self, mock_post):
+        import os
+        os.environ["TAVILY_API_KEY"] = "tvly-test"
+        mock_post.return_value = MagicMock(
+            json=lambda: {
+                "answer": "AI is advancing rapidly.",
+                "results": [{"title": "AI News", "url": "https://example.com", "content": "details"}]
+            }
+        )
+        mock_post.return_value.raise_for_status = lambda: None
+        router = Router(goal="test", paths=["tavily/basic"], auto_register=False)
+        resp = router._call_tavily("basic", [{"role": "user", "content": "AI news"}], None)
+        assert hasattr(resp, "choices")
+        assert resp.choices[0].message.content.startswith("AI is advancing rapidly.")
+        os.environ.pop("TAVILY_API_KEY", None)
+
+
 class TestRouterReport:
     def test_double_report_warning(self):
         router = Router(goal="test", auto_register=False)
