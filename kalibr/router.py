@@ -55,6 +55,22 @@ class TraceHandle:
     path: Optional[str]
 
 
+def _make_chat_completion(content: str, model: str = "shim") -> Any:
+    """Create an OpenAI-compatible ChatCompletion shim for non-LLM providers (e.g. search APIs)."""
+    from types import SimpleNamespace
+    import uuid as _uuid
+    message = SimpleNamespace(content=content, role="assistant", tool_calls=None)
+    choice = SimpleNamespace(message=message, finish_reason="stop", index=0)
+    usage = SimpleNamespace(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+    return SimpleNamespace(
+        choices=[choice],
+        model=model,
+        usage=usage,
+        id=f"shim-{_uuid.uuid4().hex[:8]}",
+        object="chat.completion",
+    )
+
+
 class Router:
     """
     Routes LLM requests to the best model based on learned outcomes.
@@ -914,6 +930,7 @@ class Router:
         "anthropic/": "anthropic",
         "google/": "google",
         "deepseek/": "deepseek",
+        "tavily/": "tavily",
     }
 
     def _dispatch(
@@ -943,6 +960,8 @@ class Router:
                     return self._call_google(bare_model, messages, tools, **kwargs)
                 elif vendor == "deepseek":
                     return self._call_deepseek(bare_model, messages, tools, **kwargs)
+                elif vendor == "tavily":
+                    return self._call_tavily(bare_model, messages, tools, **kwargs)
 
         # Standard prefix checks for bare model IDs
         if model_id.startswith(("gpt-", "o1-", "o3-")):
@@ -1108,6 +1127,63 @@ class Router:
                 total_tokens=getattr(usage_obj, "total_tokens", 0),
             ),
         )
+
+    def _call_tavily(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
+        """Call Tavily Search API and return an OpenAI-compatible ChatCompletion shim.
+
+        Supports tavily/basic and tavily/advanced search depths.
+        Thompson Sampling can compete Tavily against LLMs on web_scraping/research goals.
+        """
+        try:
+            import httpx
+        except ImportError:
+            raise ImportError("Install 'httpx' package: pip install httpx")
+
+        api_key = os.environ.get("TAVILY_API_KEY")
+        if not api_key:
+            raise EnvironmentError(
+                "TAVILY_API_KEY environment variable not set.\n"
+                "Get your API key from: https://app.tavily.com"
+            )
+
+        # Extract query from last user message
+        query = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                query = msg.get("content", "")
+                break
+        if not query:
+            return _make_chat_completion("No user message found to search.", model=f"tavily/{model}")
+
+        # model suffix: "basic" (default) or "advanced"
+        search_depth = "advanced" if model == "advanced" else "basic"
+
+        resp = httpx.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": api_key,
+                "query": query,
+                "search_depth": search_depth,
+                "include_answer": True,
+                "max_results": 5,
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        parts = []
+        answer = data.get("answer")
+        if answer:
+            parts.append(answer)
+        for r in data.get("results", [])[:5]:
+            title = r.get("title", "")
+            url = r.get("url", "")
+            snippet = r.get("content", "")
+            parts.append(f"- [{title}]({url}): {snippet}")
+
+        content = "\n\n".join(parts) if parts else "No results found."
+        return _make_chat_completion(content, model=f"tavily/{model}")
 
     def _anthropic_to_openai_response(self, response: Any, model: str) -> Any:
         """Convert Anthropic response to OpenAI format."""

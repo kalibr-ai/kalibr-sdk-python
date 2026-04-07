@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tavily Search provider** — `tavily/basic` and `tavily/advanced` as Router paths. Returns web search results wrapped in an OpenAI-compatible ChatCompletion shim so Thompson Sampling can compete Tavily against LLMs on web research goals. Set `TAVILY_API_KEY` env var.
+
 ## [1.9.3] - 2026-03-29
 
 ### Fixed
