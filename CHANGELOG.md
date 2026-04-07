@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Tavily Search provider** — `tavily/basic` and `tavily/advanced` as Router paths. Returns web search results wrapped in an OpenAI-compatible ChatCompletion shim so Thompson Sampling can compete Tavily against LLMs on web research goals. Set `TAVILY_API_KEY` env var.
+- **Nebius AI provider** — `nebius/` prefix routes to Nebius AI Studio (OpenAI-compatible). Set `NEBIUS_API_KEY` env var. Supported models: `nebius/meta-llama/Llama-3.3-70B-Instruct`, `nebius/Qwen/Qwen2.5-72B-Instruct`, `nebius/mistralai/Mistral-Nemo-Instruct-2407`.
 
 ## [1.9.3] - 2026-03-29
 
