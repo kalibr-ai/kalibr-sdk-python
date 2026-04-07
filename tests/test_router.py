@@ -107,6 +107,35 @@ class TestTavilyRouting:
         os.environ.pop("TAVILY_API_KEY", None)
 
 
+class TestNebiusRouting:
+    @patch("kalibr.router.Router._call_nebius")
+    def test_routes_nebius_prefix(self, mock_nebius):
+        mock_nebius.return_value = MagicMock()
+        router = Router(goal="test", paths=["nebius/meta-llama/Llama-3.3-70B-Instruct"], auto_register=False)
+        router._dispatch("nebius/meta-llama/Llama-3.3-70B-Instruct", [{"role": "user", "content": "hi"}], None)
+        mock_nebius.assert_called_once()
+        assert mock_nebius.call_args[0][0] == "meta-llama/Llama-3.3-70B-Instruct"
+
+    @patch("kalibr.router.Router._call_nebius")
+    def test_routes_nebius_qwen(self, mock_nebius):
+        mock_nebius.return_value = MagicMock()
+        router = Router(goal="test", paths=["nebius/Qwen/Qwen2.5-72B-Instruct"], auto_register=False)
+        router._dispatch("nebius/Qwen/Qwen2.5-72B-Instruct", [{"role": "user", "content": "hi"}], None)
+        mock_nebius.assert_called_once()
+        assert mock_nebius.call_args[0][0] == "Qwen/Qwen2.5-72B-Instruct"
+
+    def test_nebius_missing_api_key(self):
+        import os
+        router = Router(goal="test", paths=["nebius/meta-llama/Llama-3.3-70B-Instruct"], auto_register=False)
+        env_backup = os.environ.pop("NEBIUS_API_KEY", None)
+        try:
+            with pytest.raises(EnvironmentError, match="NEBIUS_API_KEY"):
+                router._call_nebius("meta-llama/Llama-3.3-70B-Instruct", [{"role": "user", "content": "hi"}], None)
+        finally:
+            if env_backup:
+                os.environ["NEBIUS_API_KEY"] = env_backup
+
+
 class TestRouterReport:
     def test_double_report_warning(self):
         router = Router(goal="test", auto_register=False)

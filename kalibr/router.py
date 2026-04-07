@@ -931,6 +931,7 @@ class Router:
         "google/": "google",
         "deepseek/": "deepseek",
         "tavily/": "tavily",
+        "nebius/": "nebius",
     }
 
     def _dispatch(
@@ -962,6 +963,8 @@ class Router:
                     return self._call_deepseek(bare_model, messages, tools, **kwargs)
                 elif vendor == "tavily":
                     return self._call_tavily(bare_model, messages, tools, **kwargs)
+                elif vendor == "nebius":
+                    return self._call_nebius(bare_model, messages, tools, **kwargs)
 
         # Standard prefix checks for bare model IDs
         if model_id.startswith(("gpt-", "o1-", "o3-")):
@@ -1012,6 +1015,28 @@ class Router:
         client = OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com",
+        )
+
+        call_kwargs = {"model": model, "messages": messages, **kwargs}
+        return client.chat.completions.create(**call_kwargs)
+
+    def _call_nebius(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
+        """Call Nebius AI API using OpenAI-compatible client with Nebius base URL."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("Install 'openai' package: pip install openai")
+
+        api_key = os.environ.get("NEBIUS_API_KEY")
+        if not api_key:
+            raise EnvironmentError(
+                "NEBIUS_API_KEY environment variable not set.\n"
+                "Get your API key from: https://studio.nebius.ai"
+            )
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.studio.nebius.ai/v1/",
         )
 
         call_kwargs = {"model": model, "messages": messages, **kwargs}
