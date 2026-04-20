@@ -229,17 +229,17 @@ No dashboards to watch. No alerts to triage. Your agent improves itself.
 
 ## Self-healing execution loop
 
-Every model call runs through Kalibr's self-contained healing loop:
+Every model call runs through a self-contained healing loop — no orchestrator required:
 
-1. **Meta prompt generation** — Kalibr generates a task-specific system prompt before the call (using your API key)
-2. **Model call** — runs on your API key with the meta prompt
-3. **Gate 1: structural eval** — deterministic check: did the output match the expected format?
-4. **If failure: LLM judge** — classifies whether it's a prompt problem or model problem (using your API key)
-   - Prompt problem → meta prompt is repaired, retry with same model
-   - Model problem → swap to next-best model, retry
+1. **Meta prompt generation** — Kalibr instruments an LLM (your API key) to generate a task-specific system prompt from your goal and request
+2. **Model call** — runs on your API key with the meta prompt as system message
+3. **Gate 1 structural eval** — deterministic: did the output match the expected format?
+4. **If failure: LLM judge** — instruments another LLM (your API key) to classify the failure:
+   - Prompt problem → meta prompt is repaired and retried on the same model
+   - Model problem → swap to next-best model and retry
 5. **Outcome reported** — bandit updates for (model × prompt variant × goal)
 
-No orchestrator required. Your original messages are never modified. All LLM calls for meta prompt generation and repair run on your API keys — zero Kalibr inference cost.
+Your original messages are never modified. All LLM calls for meta prompt generation and repair run on your API keys — zero Kalibr inference cost.
 
 ## Paths
 
