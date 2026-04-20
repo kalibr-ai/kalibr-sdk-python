@@ -932,6 +932,7 @@ class Router:
         "deepseek/": "deepseek",
         "tavily/": "tavily",
         "nebius/": "nebius",
+        "ollama/": "ollama",
     }
 
     def _dispatch(
@@ -965,6 +966,8 @@ class Router:
                     return self._call_tavily(bare_model, messages, tools, **kwargs)
                 elif vendor == "nebius":
                     return self._call_nebius(bare_model, messages, tools, **kwargs)
+                elif vendor == "ollama":
+                    return self._call_ollama(bare_model, messages, tools, **kwargs)
 
         # Standard prefix checks for bare model IDs
         if model_id.startswith(("gpt-", "o1-", "o3-")):
@@ -1037,6 +1040,32 @@ class Router:
         client = OpenAI(
             api_key=api_key,
             base_url="https://api.studio.nebius.ai/v1/",
+        )
+
+        call_kwargs = {"model": model, "messages": messages, **kwargs}
+        return client.chat.completions.create(**call_kwargs)
+
+    def _call_ollama(self, model: str, messages: List[Dict], tools: Any, **kwargs) -> Any:
+        """Call Ollama local model via OpenAI-compatible API.
+
+        Ollama exposes an OpenAI-compatible endpoint at localhost:11434/v1 by default.
+        Override with OLLAMA_BASE_URL environment variable for remote/custom deployments.
+        No API key required for local deployments; set OLLAMA_API_KEY if your deployment requires one.
+
+        Usage:
+            router = Router(paths=["ollama/llama3.2", "openai/gpt-4o-mini"])
+        """
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("Install 'openai' package: pip install openai")
+
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        api_key = os.environ.get("OLLAMA_API_KEY", "ollama")  # Ollama accepts any non-empty string
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
         )
 
         call_kwargs = {"model": model, "messages": messages, **kwargs}
