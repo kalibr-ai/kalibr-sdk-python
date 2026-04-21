@@ -1,6 +1,6 @@
 # Kalibr Python SDK
 
-You're spending too much to run your agents. Kalibr routes every request to lower-cost model and tool paths without degrading performance.
+The self-healing execution harness for agent pipelines. Every model call gets a task-specific meta prompt, automatic failure detection, an LLM judge that classifies what went wrong, and smart repair — prompt fix or model swap. Pipelines keep running. You don't touch them.
 
 Open source SDK. Hosted routing intelligence.
 
