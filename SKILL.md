@@ -1,34 +1,24 @@
 ---
 name: kalibr
-description: Ship agents that fix themselves. Kalibr learns what's working as your agents run in production and routes them around failures, degradations, and cost spikes before you know they're happening.
+description: "Configures Kalibr routers for agent pipelines, sets up multi-model execution paths with automatic failover, defines success criteria for outcome-based routing, and instruments LLM calls for production telemetry. Use when the user asks about Kalibr setup, agent routing, model failover, adaptive model selection, production agent reliability, or cost-aware LLM routing."
 version: 0.2.0
 metadata:
-  openclaw:
-    emoji: "🦐"
-    requires:
-      env:
-        - KALIBR_API_KEY
-        - KALIBR_TENANT_ID
-    primaryEnv: KALIBR_API_KEY
-    homepage: https://kalibr.systems
+  emoji: "🦐"
+  requires_env: "KALIBR_API_KEY, KALIBR_TENANT_ID"
+  primary_env: "KALIBR_API_KEY"
+  homepage: "https://kalibr.systems"
 ---
 
-# Kalibr — agents that fix themselves
+# Kalibr Python SDK
 
-Kalibr lets agents choose the optimal model + tools for any task, across any modality, as they run in production.
-
-You define candidate execution paths — model + tools + parameters. Kalibr figures out which one wins for each task from real production telemetry. When a path degrades at 3am, your agents are already on the next best path. No alerts. No debugging. No you.
+Kalibr routes agent requests across multiple model+tool execution paths based on real production outcomes. It uses Thompson Sampling to learn which path works best per task, automatically shifts traffic away from degraded providers, and maintains 10% canary traffic to detect regressions early.
 
 ## When to use this
 
-- User is building agents and asks about reliability, failover, or model selection
-- User's agent is failing because a model provider is degraded or down
-- User wants different tasks routed to different models automatically
-- User is hardcoding `model="gpt-4o"` and wants something that adapts
-- User asks about production monitoring, cost optimization, or agent routing
-- User asks how to stop agents from breaking when a provider has an outage
-- User is building multimodal agents and wants unified optimization across text, voice, and image
-- User wants to route HuggingFace models based on production outcomes
+- User asks about Kalibr configuration, routing, or failover setup
+- User wants adaptive model selection instead of hardcoded model names
+- User needs automatic failover when a model provider degrades
+- User asks about cost-aware routing or production agent reliability
 
 ## Install
 
@@ -41,12 +31,6 @@ Get credentials at https://dashboard.kalibr.systems/settings
 ```bash
 export KALIBR_API_KEY="your-api-key"
 export KALIBR_TENANT_ID="your-tenant-id"
-```
-
-### Install via OpenClaw
-
-```bash
-openclaw plugins install @kalibr/openclaw
 ```
 
 ## Quick start
@@ -67,15 +51,14 @@ response = router.completion(
     messages=[{"role": "user", "content": "Extract emails from this page..."}]
 )
 
-# This is how Kalibr learns — tell it what worked
 router.report(success="@" in response.choices[0].message.content)
 ```
 
-Kalibr routes the full execution path — model + tools + parameters — not just the model. After ~20 outcomes it knows what's winning. After 50 it's locked in and adapting.
+After ~20 reported outcomes Kalibr learns which path wins per task. After 50 it is locked in and adapting automatically.
 
 ## Auto-reporting
 
-Skip manual reporting — define success inline:
+Define success criteria inline so Kalibr reports outcomes automatically:
 
 ```python
 router = Router(
@@ -84,31 +67,31 @@ router = Router(
     success_when=lambda output: "@" in output,
 )
 
-# Kalibr reports outcomes automatically after every call
 response = router.completion(messages=[...])
 ```
 
-## How it's different
+## Error handling
 
-**OpenRouter / LiteLLM routing**: Model proxy. Routes based on price, speed, availability. Doesn't know if the response was actually good for your task.
+```python
+from kalibr import Router
 
-**Fallback systems** (LangChain ModelFallbackMiddleware): Reactive. Waits for a failure, then tries the next model. You already lost that request.
+try:
+    router = Router(goal="summarize", paths=["gpt-4o", "claude-sonnet-4-20250514"])
+    response = router.completion(messages=[{"role": "user", "content": "Summarize this."}])
+except ValueError as e:
+    print(f"Configuration error: {e}")
+except Exception as e:
+    print(f"Routing error: {e}")
+```
 
-**Kalibr**: Learns from your actual production telemetry — per task, per path. Routes to what's working before anything breaks. 10% canary traffic keeps testing alternatives so Kalibr catches degradation before your users do.
+`Router()` raises `ValueError` for invalid configuration (missing API key, malformed paths). If all paths fail during `completion()`, the last exception from the final attempted path is re-raised.
 
-## Works with
+## Framework integrations
 
-- **LangChain / LangGraph**: `pip install langchain-kalibr` — drop-in ChatModel
-- **CrewAI**: Pass `ChatKalibr` as any agent's `llm`
-- **OpenAI Agents SDK**: Drop-in replacement
-- **Any Python code that calls an LLM**
-- **HuggingFace**: Any of 17 task types across every modality
-
-## How it works
-
-Kalibr captures telemetry on every agent run — latency, success, cost, provider status. It uses Thompson Sampling to balance exploration (trying paths) vs. exploitation (using the best). 10% canary traffic keeps testing alternatives so Kalibr catches degradation before your users do.
-
-Success rate always dominates. Kalibr never sacrifices quality for cost.
+- **LangChain / LangGraph**: `pip install langchain-kalibr` — drop-in `ChatKalibr` model
+- **CrewAI**: Pass `ChatKalibr` as any agent's `llm` parameter
+- **OpenAI Agents SDK**: Drop-in replacement via `kalibr_openai_agents`
+- **Voice (LiveKit / Pipecat)**: Auto-instrumentation via `kalibr_voice`
 
 ## Links
 
