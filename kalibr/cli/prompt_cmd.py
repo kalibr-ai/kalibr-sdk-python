@@ -11,7 +11,7 @@ console = Console()
 PROMPT_TEXT = (
     "Read https://kalibr.systems/llms.txt for an overview of Kalibr, "
     "then read https://kalibr.systems/setup.txt for the complete setup reference. "
-    "Integrate Kalibr outcome-aware routing into my project using the Router pattern. "
+    "Integrate Kalibr into my project: install the SDK, wrap LLM calls with Router, classify tasks to goal types, and report outcomes. Kalibr is a self-healing execution harness. "
     "Set KALIBR_API_KEY and KALIBR_TENANT_ID from dashboard.kalibr.systems/settings."
 )
 
