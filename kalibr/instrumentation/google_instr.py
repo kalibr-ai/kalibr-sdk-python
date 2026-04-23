@@ -86,7 +86,6 @@ class GoogleInstrumentation(BaseInstrumentation):
             return True
 
         except ImportError:
-            print("⚠️  Google Generative AI SDK not installed, skipping instrumentation")
             return False
         except Exception as e:
             print(f"❌ Failed to instrument Google Generative AI SDK: {e}")

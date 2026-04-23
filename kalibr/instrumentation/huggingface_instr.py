@@ -290,7 +290,6 @@ class HuggingFaceInstrumentation(BaseInstrumentation):
             return True
 
         except ImportError:
-            print("⚠️  huggingface_hub not installed, skipping instrumentation")
             return False
         except Exception as e:
             print(f"❌ Failed to instrument HuggingFace SDK: {e}")
