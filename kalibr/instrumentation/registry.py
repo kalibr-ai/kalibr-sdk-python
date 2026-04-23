@@ -114,7 +114,10 @@ def auto_instrument(providers: List[str] = None) -> Dict[str, bool]:
                 results[provider_lower] = False
 
         except ImportError as e:
-            print(f"⚠️  {provider} SDK not installed, skipping instrumentation")
+            # Optional providers are silent when not installed. Core providers still warn.
+            _silent_optional = {"google", "huggingface", "elevenlabs", "deepgram", "openai_responses"}
+            if provider_lower not in _silent_optional:
+                print(f"⚠️  {provider} SDK not installed, skipping instrumentation")
             results[provider_lower] = False
         except Exception as e:
             print(f"❌ Failed to instrument {provider}: {e}")
