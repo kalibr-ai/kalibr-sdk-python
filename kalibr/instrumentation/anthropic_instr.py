@@ -84,7 +84,6 @@ class AnthropicInstrumentation(BaseInstrumentation):
             return True
 
         except ImportError:
-            print("⚠️  Anthropic SDK not installed, skipping instrumentation")
             return False
         except Exception as e:
             print(f"❌ Failed to instrument Anthropic SDK: {e}")
