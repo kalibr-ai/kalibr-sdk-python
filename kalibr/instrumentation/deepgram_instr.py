@@ -111,7 +111,6 @@ class DeepgramInstrumentation(BaseInstrumentation):
             return True
 
         except ImportError:
-            print("\u26a0\ufe0f  Deepgram SDK not installed, skipping instrumentation")
             return False
         except Exception as e:
             print(f"\u274c Failed to instrument Deepgram SDK: {e}")

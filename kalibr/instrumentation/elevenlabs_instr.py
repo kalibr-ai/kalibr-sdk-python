@@ -86,7 +86,6 @@ class ElevenLabsInstrumentation(BaseInstrumentation):
             return True
 
         except ImportError:
-            print("\u26a0\ufe0f  ElevenLabs SDK not installed, skipping instrumentation")
             return False
         except Exception as e:
             print(f"\u274c Failed to instrument ElevenLabs SDK: {e}")
