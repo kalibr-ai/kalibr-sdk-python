@@ -100,7 +100,7 @@ from .intelligence import (
     FAILURE_CATEGORIES,
 )
 from .router import Router, TraceHandle
-from .feedback import KalibrFeedback, track_run, user_rejected, user_accepted, get_feedback
+from .feedback import KalibrFeedback, track_run, user_rejected, user_accepted, get_feedback, classify_satisfaction, classify_satisfaction_async
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
     # Setup OpenTelemetry collector
@@ -187,4 +187,6 @@ __all__ = [
     "user_rejected",
     "user_accepted",
     "get_feedback",
+    "classify_satisfaction",
+    "classify_satisfaction_async",
 ]

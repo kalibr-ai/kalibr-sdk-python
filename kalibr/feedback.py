@@ -187,3 +187,130 @@ def user_accepted(score: float = 0.85) -> bool:
 def get_feedback() -> KalibrFeedback:
     """Get the global feedback instance (if you need direct access)."""
     return _global_feedback
+
+
+# ── Semantic satisfaction classifier ─────────────────────────────────────────
+
+_SATISFACTION_PROMPT = """You are classifying user satisfaction with an AI output.
+
+Prior AI output:
+{prior_output}
+
+User's follow-up message:
+{user_message}
+
+Based only on the user's follow-up, classify their satisfaction:
+- "negative": user is dissatisfied, wants a change, retry, or is expressing criticism
+- "positive": user is satisfied, approves, or is moving forward with the output
+- "neutral": user is asking a clarifying question, continuing the conversation, or no clear signal
+
+Respond with ONLY one of: negative, positive, neutral"""
+
+
+def classify_satisfaction(
+    user_message: str,
+    prior_output: str,
+    model: str = "deepseek-chat",
+) -> str:
+    """
+    Classify user satisfaction with the prior Kalibr output.
+
+    Uses a cheap LLM to semantically interpret the user's follow-up message.
+    Never uses keyword matching. Returns "negative", "positive", or "neutral".
+
+    This is the right way to detect rejection — not keyword lists.
+    The orchestrator already has this context; this makes it explicit and persistent.
+
+    Args:
+        user_message: The user's follow-up message after seeing Kalibr's output
+        prior_output: The output that Kalibr produced in the prior step
+        model: Model to use for classification (default: deepseek-chat — cheap and fast)
+
+    Returns:
+        "negative" | "positive" | "neutral"
+
+    Usage in agent loop:
+        result = classify_satisfaction(
+            user_message=user_turn,
+            prior_output=last_output,
+        )
+        if result == "negative":
+            user_rejected()
+        elif result == "positive":
+            user_accepted()
+
+    Fire-and-forget async version available via classify_satisfaction_async().
+    """
+    if not user_message or not prior_output:
+        return "neutral"
+
+    prompt = _SATISFACTION_PROMPT.format(
+        prior_output=prior_output[:800],
+        user_message=user_message[:400],
+    )
+
+    # Try providers in order of preference (cheap models only)
+    providers = [
+        ("deepseek", "deepseek-chat", "https://api.deepseek.com"),
+        ("openai", "gpt-4o-mini", None),
+        ("anthropic", "claude-haiku-3-5-20241022", None),
+    ]
+
+    for provider_name, model_id, base_url in providers:
+        api_key = os.environ.get(f"{provider_name.upper()}_API_KEY")
+        if not api_key:
+            continue
+        try:
+            import openai as _openai
+            if provider_name == "anthropic":
+                import anthropic as _anthropic
+                client = _anthropic.Anthropic(api_key=api_key)
+                resp = client.messages.create(
+                    model=model_id,
+                    max_tokens=10,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = resp.content[0].text.strip().lower()
+            else:
+                kwargs = {"api_key": api_key}
+                if base_url:
+                    kwargs["base_url"] = base_url
+                client = _openai.OpenAI(**kwargs)
+                resp = client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=10,
+                    temperature=0.0,
+                )
+                raw = (resp.choices[0].message.content or "").strip().lower()
+
+            if "negative" in raw:
+                return "negative"
+            elif "positive" in raw:
+                return "positive"
+            else:
+                return "neutral"
+
+        except Exception:
+            continue
+
+    # No provider available — return neutral (fail open, never block)
+    return "neutral"
+
+
+async def classify_satisfaction_async(
+    user_message: str,
+    prior_output: str,
+) -> str:
+    """
+    Async version of classify_satisfaction. Fire-and-forget friendly.
+    Same semantics, same return values.
+    """
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        classify_satisfaction,
+        user_message,
+        prior_output,
+    )
