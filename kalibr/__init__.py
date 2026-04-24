@@ -36,7 +36,7 @@ CLI Usage:
     kalibr version                       # Show version
 """
 
-__version__ = "1.11.5"
+__version__ = "1.11.6"
 
 # Auto-instrument LLM SDKs on import (can be disabled via env var)
 import os
@@ -118,6 +118,13 @@ if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
         auto_instrument(["openai", "anthropic", "google", "openai_responses"])
     except Exception as e:
         print(f"⚠️  Failed to auto-instrument SDKs: {e}")
+
+# Auto-sync AGENTS.md routing section (background, once per day)
+try:
+    from kalibr.agents_sync import sync_agents_md_background
+    sync_agents_md_background()
+except Exception:
+    pass
 
 __all__ = [
     # ========================================================================
