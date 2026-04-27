@@ -20,6 +20,8 @@ User prompts are never sent — only the trace_id, goal, and outcome.
 """
 
 import os
+import json
+import pathlib
 from typing import Optional
 
 
@@ -42,9 +44,32 @@ class KalibrFeedback:
         """
         Call this after every router.completion() or pipeline run.
         Stores the trace context so reject()/accept() can reference it.
+        Also persists to disk so feedback works across sessions.
         """
         self._trace_id = trace_id
         self._goal = goal
+        # Persist to disk for cross-session feedback
+        try:
+            cache_path = pathlib.Path(os.path.expanduser("~/.kalibr/last_trace.json"))
+            cache_path.parent.mkdir(exist_ok=True)
+            cache_path.write_text(json.dumps({"trace_id": trace_id, "goal": goal}))
+        except Exception:
+            pass  # non-critical
+
+    def _load_from_disk(self) -> bool:
+        """Load last trace context from disk if not in memory."""
+        if self._trace_id:
+            return True
+        try:
+            cache_path = pathlib.Path(os.path.expanduser("~/.kalibr/last_trace.json"))
+            if cache_path.exists():
+                data = json.loads(cache_path.read_text())
+                self._trace_id = data.get("trace_id")
+                self._goal = data.get("goal")
+                return bool(self._trace_id)
+        except Exception:
+            pass
+        return False
 
     def reject(self, reason: str = "") -> bool:
         """
@@ -76,6 +101,9 @@ class KalibrFeedback:
         failure_category: Optional[str] = None,
         failure_reason: Optional[str] = None,
     ) -> bool:
+        # Try loading from disk if not in memory (cross-session support)
+        if not self._trace_id or not self._goal:
+            self._load_from_disk()
         if not self._trace_id or not self._goal:
             return False
         if not self._api_key or not self._tenant_id:
