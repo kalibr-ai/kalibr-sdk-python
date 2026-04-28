@@ -131,6 +131,8 @@ class Router:
         paths: Optional[List[PathSpec]] = None,
         success_when: Optional[Callable[[str], bool]] = None,
         score_when: Optional[Callable[[str], float]] = None,
+        judge_model: Optional[str] = None,
+        judge_threshold: float = 0.7,
         exploration_rate: Optional[float] = None,
         auto_register: bool = True,
     ):
@@ -188,6 +190,8 @@ class Router:
 
         self.success_when = success_when
         self.score_when = score_when
+        self.judge_model = judge_model
+        self.judge_threshold = judge_threshold
         self.exploration_rate = exploration_rate
         self._last_trace_id: Optional[str] = None
         self._last_model_id: Optional[str] = None
@@ -355,6 +359,30 @@ class Router:
 
                     # Success! Update state to reflect which model succeeded
                     self._last_model_id = candidate_model
+
+                    # Gate 2: LLM-as-a-judge (optional, runs if judge_model configured)
+                    if self.judge_model and not self._outcome_reported:
+                        try:
+                            output = response.choices[0].message.content or ""
+                            judge_score = self._run_judge(output, messages)
+                            if judge_score < self.judge_threshold:
+                                logger.warning(f"Gate 2 quality fail (score={judge_score:.2f}) on {candidate_model}, trying next path")
+                                try:
+                                    report_outcome(
+                                        trace_id=trace_id,
+                                        goal=self.goal,
+                                        success=False,
+                                        failure_reason="quality_fail",
+                                        model_id=candidate_model,
+                                    )
+                                except Exception:
+                                    pass
+                                continue
+                            else:
+                                self.report(success=True, score=judge_score)
+                                self._outcome_reported = True
+                        except Exception as e:
+                            logger.warning(f"Gate 2 judge failed (non-blocking): {e}")
 
                     # Auto-report if any scoring mechanism is provided (or use defaults)
                     if not self._outcome_reported:
@@ -569,6 +597,27 @@ class Router:
             return 0.5
 
         return self._score_text_content(content, response)
+
+    def _run_judge(self, output: str, original_messages: list) -> float:
+        """Run LLM-as-a-judge Gate 2 quality eval. Uses caller's model/keys."""
+        import re
+        original_prompt = next(
+            (m.get("content", "") for m in original_messages if m.get("role") == "user"),
+            ""
+        )
+        judge_prompt = (
+            "You are a quality evaluator. Score the following output 0.0 to 1.0.\n\n"
+            f"Original request: {original_prompt[:500]}\n\n"
+            f"Output:\n{output[:1000]}\n\n"
+            "Scoring: 1.0=perfect, 0.7-0.9=good, 0.4-0.6=mediocre, 0.0-0.3=bad/wrong language/malformed.\n"
+            "Respond with ONLY a number between 0.0 and 1.0."
+        )
+        judge_response = self._dispatch(self.judge_model, [{"role": "user", "content": judge_prompt}], None)
+        score_text = judge_response.choices[0].message.content.strip()
+        matches = re.findall(r"\d+\.?\d*", score_text)
+        if matches:
+            return min(1.0, max(0.0, float(matches[0])))
+        return 0.5
 
     def _score_text_content(self, content: str, response: Any = None) -> float:
         """Score text content using heuristics. Used by _default_score for text-based responses."""
