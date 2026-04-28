@@ -133,6 +133,7 @@ class Router:
         score_when: Optional[Callable[[str], float]] = None,
         judge_model: Optional[str] = None,
         judge_threshold: float = 0.7,
+        repair_prompt: bool = False,
         exploration_rate: Optional[float] = None,
         auto_register: bool = True,
     ):
@@ -192,6 +193,7 @@ class Router:
         self.score_when = score_when
         self.judge_model = judge_model
         self.judge_threshold = judge_threshold
+        self.repair_prompt = repair_prompt
         self.exploration_rate = exploration_rate
         self._last_trace_id: Optional[str] = None
         self._last_model_id: Optional[str] = None
@@ -366,18 +368,65 @@ class Router:
                             output = response.choices[0].message.content or ""
                             judge_score = self._run_judge(output, messages)
                             if judge_score < self.judge_threshold:
-                                logger.warning(f"Gate 2 quality fail (score={judge_score:.2f}) on {candidate_model}, trying next path")
-                                try:
-                                    report_outcome(
-                                        trace_id=trace_id,
-                                        goal=self.goal,
-                                        success=False,
-                                        failure_reason="quality_fail",
-                                        model_id=candidate_model,
-                                    )
-                                except Exception:
-                                    pass
-                                continue
+                                logger.warning(f"Gate 2 quality fail (score={judge_score:.2f}) on {candidate_model}")
+
+                                # Attempt prompt repair before swapping model
+                                if self.repair_prompt:
+                                    try:
+                                        logger.info("Attempting prompt repair before model swap...")
+                                        repaired_messages = self._repair_prompt(output, messages, judge_score)
+                                        repair_response = self._dispatch(
+                                            candidate_model,
+                                            repaired_messages,
+                                            candidate_tools,
+                                            **{**candidate_params, **kwargs}
+                                        )
+                                        repair_output = repair_response.choices[0].message.content or ""
+                                        repair_score = self._run_judge(repair_output, repaired_messages)
+                                        if repair_score >= self.judge_threshold:
+                                            logger.info(f"Prompt repair succeeded (score={repair_score:.2f})")
+                                            self.report(success=True, score=repair_score)
+                                            self._outcome_reported = True
+                                            response = repair_response
+                                            # Skip to return — fall through to response return below
+                                        else:
+                                            logger.warning(f"Prompt repair failed (score={repair_score:.2f}), trying next model")
+                                            try:
+                                                report_outcome(
+                                                    trace_id=trace_id,
+                                                    goal=self.goal,
+                                                    success=False,
+                                                    failure_reason="quality_fail_after_repair",
+                                                    model_id=candidate_model,
+                                                )
+                                            except Exception:
+                                                pass
+                                            continue
+                                    except Exception as e:
+                                        logger.warning(f"Prompt repair attempt failed (non-blocking): {e}")
+                                        try:
+                                            report_outcome(
+                                                trace_id=trace_id,
+                                                goal=self.goal,
+                                                success=False,
+                                                failure_reason="quality_fail",
+                                                model_id=candidate_model,
+                                            )
+                                        except Exception:
+                                            pass
+                                        continue
+                                else:
+                                    try:
+                                        report_outcome(
+                                            trace_id=trace_id,
+                                            goal=self.goal,
+                                            success=False,
+                                            failure_reason="quality_fail",
+                                            model_id=candidate_model,
+                                        )
+                                    except Exception:
+                                        pass
+                                    continue
                             else:
                                 self.report(success=True, score=judge_score)
                                 self._outcome_reported = True
@@ -618,6 +667,43 @@ class Router:
         if matches:
             return min(1.0, max(0.0, float(matches[0])))
         return 0.5
+
+    def _repair_prompt(self, output: str, original_messages: list, judge_score: float) -> list:
+        """Ask judge model to rewrite the failing prompt based on the bad output.
+
+        Returns a new messages list with the rewritten user prompt.
+        Uses judge_model — caller's model, caller's keys, zero cost to Kalibr.
+        """
+        original_prompt = next(
+            (m.get("content", "") for m in original_messages if m.get("role") == "user"),
+            ""
+        )
+        repair_request = (
+            f"The following prompt produced a low-quality output (score: {judge_score:.2f}).\n\n"
+            f"Original prompt:\n{original_prompt[:800]}\n\n"
+            f"Bad output:\n{output[:600]}\n\n"
+            "Rewrite the prompt to be clearer and more specific so the model produces better output. "
+            "Keep the intent identical. Return ONLY the rewritten prompt, no explanation."
+        )
+        repair_response = self._dispatch(
+            self.judge_model,
+            [{"role": "user", "content": repair_request}],
+            None,
+        )
+        rewritten = repair_response.choices[0].message.content.strip()
+        if not rewritten:
+            return original_messages
+
+        # Replace user message with rewritten prompt, preserve system messages
+        new_messages = []
+        user_replaced = False
+        for msg in original_messages:
+            if msg.get("role") == "user" and not user_replaced:
+                new_messages.append({"role": "user", "content": rewritten})
+                user_replaced = True
+            else:
+                new_messages.append(msg)
+        return new_messages if user_replaced else original_messages
 
     def _score_text_content(self, content: str, response: Any = None) -> float:
         """Score text content using heuristics. Used by _default_score for text-based responses."""
