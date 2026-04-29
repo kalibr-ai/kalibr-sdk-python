@@ -342,3 +342,76 @@ async def classify_satisfaction_async(
         user_message,
         prior_output,
     )
+
+
+# ── Generic signal emission ───────────────────────────────────────────────────
+
+def emit_signal(
+    signal_type: str,
+    strength: float = 0.5,
+    dimension: str = "",
+    raw_evidence: str = "",
+    pipeline_step: int = 0,
+    confidence: float = 1.0,
+    trace_id: str | None = None,
+    goal: str | None = None,
+) -> bool:
+    """
+    Emit a behavioral signal to the Kalibr signals endpoint.
+
+    This is the low-level signal emission function. For most use cases,
+    use user_rejected(), user_accepted(), or classify_satisfaction() instead.
+
+    signal_type options:
+      'user_rejected'    — explicit user rejection
+      'user_accepted'    — explicit user acceptance  
+      'downstream_use'   — output was used verbatim in next step
+      'edit_small'       — output was used but lightly edited
+      'edit_large'       — output was substantially rewritten
+      'abandonment'      — session ended without using output
+      'retry'            — user requested a redo
+
+    strength: 0.0 = strong negative, 1.0 = strong positive, 0.5 = neutral
+
+    dimension: 'tone' | 'format' | 'length' | 'factuality' | 'completeness' | 'overall'
+    """
+    fb = get_feedback()
+    # Load from disk if not in memory
+    if not fb._trace_id:
+        fb._load_from_disk()
+
+    effective_trace_id = trace_id or fb._trace_id
+    effective_goal = goal or fb._goal
+
+    if not effective_trace_id:
+        return False
+
+    api_key = fb._api_key
+    tenant_id = fb._tenant_id
+    base_url = fb._base_url
+
+    if not api_key or not tenant_id:
+        return False
+
+    try:
+        import requests
+        payload = {
+            "trace_id": effective_trace_id,
+            "signal_type": signal_type,
+            "signal_source": "user_explicit" if signal_type in ("user_rejected", "user_accepted") else "user_implicit",
+            "strength": strength,
+            "confidence": confidence,
+            "dimension": dimension,
+            "goal": effective_goal or "",
+            "raw_evidence": raw_evidence[:500] if raw_evidence else "",
+            "pipeline_step": pipeline_step,
+        }
+        r = requests.post(
+            f"{base_url}/api/v1/signals",
+            headers={"X-API-Key": api_key, "X-Tenant-ID": tenant_id},
+            json=payload,
+            timeout=3,
+        )
+        return r.status_code in (200, 201)
+    except Exception:
+        return False
