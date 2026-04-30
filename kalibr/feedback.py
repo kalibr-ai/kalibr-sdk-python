@@ -515,19 +515,22 @@ def _heuristic_classify(user_message: str) -> tuple:
 
     if rejection_hits > acceptance_hits and rejection_hits >= 1:
         conf = min(0.6 + rejection_hits * 0.15, 0.95)
-        return conf, "rejection", []
+        return conf, "user_rejected", []
     elif acceptance_hits > rejection_hits and acceptance_hits >= 1:
         conf = min(0.6 + acceptance_hits * 0.15, 0.95)
-        return conf, "acceptance", []
+        return conf, "user_accepted", []
 
-    return 0.3, "neutral", []
+    return 0.3, "unrelated", []
 
 
 def _fire_user_turn_signal(
     base_url, api_key, tenant_id, session, session_id,
     signal_type, confidence, dimensions, raw_evidence,
 ):
-    strength = 0.0 if signal_type == "rejection" else (1.0 if signal_type == "acceptance" else 0.5)
+    # Drop unrelated/neutral signals — absence of reaction is not a signal
+    if signal_type not in ("user_rejected", "user_accepted"):
+        return
+    strength = 0.0 if signal_type == "user_rejected" else 1.0
     payload = {
         "trace_id": session.get("trace_id", ""),
         "signal_type": signal_type,
@@ -707,7 +710,7 @@ def submit_feedback(session_id: str, ratings: dict) -> None:
                 for dimension, rating in ratings.items():
                     if rating == 0:
                         continue
-                    strength = 0.0 if rating == -1 else (0.5 if rating == 0 else 1.0)
+                    strength = 0.0 if rating == -1 else 1.0
                     payload = {
                         "trace_id": trace_id,
                         "signal_type": "explicit_feedback",
