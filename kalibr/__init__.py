@@ -103,7 +103,7 @@ from .router import Router, TraceHandle
 from .feedback import (
     KalibrFeedback, track_run, user_rejected, user_accepted, get_feedback,
     classify_satisfaction, classify_satisfaction_async, emit_signal,
-    report_pipeline, report_user_turn, report_action, request_feedback, submit_feedback,
+    report_pipeline, report_user_turn, report_action,
 )
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
@@ -204,6 +204,4 @@ __all__ = [
     "report_pipeline",
     "report_user_turn",
     "report_action",
-    "request_feedback",
-    "submit_feedback",
 ]
