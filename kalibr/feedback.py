@@ -22,7 +22,13 @@ User prompts are never sent — only the trace_id, goal, and outcome.
 import os
 import json
 import pathlib
+import threading
+import time
+import uuid
+import logging
 from typing import Optional
+
+logger = logging.getLogger("kalibr.feedback")
 
 
 class KalibrFeedback:
@@ -345,6 +351,384 @@ async def classify_satisfaction_async(
 
 
 # ── Generic signal emission ───────────────────────────────────────────────────
+
+def _emit_signal_http(
+    base_url: str,
+    api_key: str,
+    tenant_id: str,
+    payload: dict,
+) -> bool:
+    """Internal helper to POST a signal payload. Returns True on success."""
+    try:
+        import requests
+        r = requests.post(
+            f"{base_url}/api/v1/intelligence/signals",
+            headers={"X-API-Key": api_key, "X-Tenant-ID": tenant_id},
+            json=payload,
+            timeout=3,
+        )
+        return r.status_code in (200, 201)
+    except Exception:
+        return False
+
+
+def _get_session_path(session_id: str) -> pathlib.Path:
+    return pathlib.Path(os.path.expanduser(f"~/.kalibr/sessions/{session_id}.json"))
+
+
+def _read_session(session_id: str) -> Optional[dict]:
+    """Read session file; returns None if missing or expired (>30 min)."""
+    try:
+        path = _get_session_path(session_id)
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text())
+        if time.time() - data.get("ts", 0) > 1800:
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _fb_config() -> tuple:
+    """Return (api_key, tenant_id, base_url) from global feedback singleton."""
+    fb = get_feedback()
+    return fb._api_key, fb._tenant_id, fb._base_url
+
+
+# ── Behavioral Signal SDK (v1.12.0) ────────────────────────────────────────
+
+
+def report_pipeline(
+    session_id: str,
+    goal: str,
+    prompt: str,
+    output: str,
+    model: str,
+    meta_prompt_id: Optional[str] = None,
+) -> None:
+    """
+    Anchor a pipeline run so downstream signals can correlate back.
+
+    Writes a pipeline_anchor signal AND persists session context to
+    ~/.kalibr/sessions/{session_id}.json (TTL 30 min).
+    """
+    try:
+        api_key, tenant_id, base_url = _fb_config()
+        trace_id = str(uuid.uuid4())
+
+        # Persist session file
+        session_dir = pathlib.Path(os.path.expanduser("~/.kalibr/sessions"))
+        session_dir.mkdir(parents=True, exist_ok=True)
+        session_data = {
+            "trace_id": trace_id,
+            "goal": goal,
+            "prompt": prompt,
+            "output_snippet": output[:200],
+            "model": model,
+            "meta_prompt_id": meta_prompt_id,
+            "ts": time.time(),
+        }
+        _get_session_path(session_id).write_text(json.dumps(session_data))
+
+        # Fire signal
+        if api_key and tenant_id:
+            payload = {
+                "trace_id": trace_id,
+                "signal_type": "pipeline_anchor",
+                "signal_source": "pipeline",
+                "strength": 0.5,
+                "confidence": 1.0,
+                "goal": goal,
+                "model": model,
+                "session_id": session_id,
+            }
+            if meta_prompt_id:
+                payload["meta_prompt_id"] = meta_prompt_id
+            _emit_signal_http(base_url, api_key, tenant_id, payload)
+    except Exception as e:
+        logger.warning("report_pipeline failed: %s", e)
+
+
+def report_user_turn(session_id: str, user_message: str) -> None:
+    """
+    Classify a user follow-up message against the anchored session.
+
+    Layer 1: heuristic keyword check (fast).
+    Layer 2: LLM classifier in background thread if confidence < 0.85.
+    Never blocks the caller.
+    """
+    try:
+        session = _read_session(session_id)
+        if session is None:
+            return
+
+        api_key, tenant_id, base_url = _fb_config()
+        if not api_key or not tenant_id:
+            return
+
+        # Layer 1 — heuristic classifier
+        confidence, signal_type, dimensions = _heuristic_classify(user_message)
+
+        if confidence >= 0.85:
+            _fire_user_turn_signal(
+                base_url, api_key, tenant_id, session, session_id,
+                signal_type, confidence, dimensions, user_message,
+            )
+        else:
+            # Fire LLM classifier in background thread
+            t = threading.Thread(
+                target=_llm_classify_and_send,
+                args=(base_url, api_key, tenant_id, session, session_id, user_message),
+                daemon=True,
+            )
+            t.start()
+    except Exception as e:
+        logger.warning("report_user_turn failed: %s", e)
+
+
+_REJECTION_KEYWORDS = {
+    "redo", "try again", "wrong", "no", "that's not", "too long", "too short",
+    "rewrite", "start over", "not what i", "change", "fix",
+}
+_ACCEPTANCE_KEYWORDS = {
+    "thanks", "perfect", "great", "looks good", "awesome", "love it", "exactly",
+    "good job", "well done", "nice",
+}
+
+
+def _heuristic_classify(user_message: str) -> tuple:
+    """Returns (confidence, signal_type, dimensions)."""
+    msg_lower = user_message.lower()
+
+    # Try importing the existing reprompt_classifier if available
+    try:
+        from kalibr.reprompt_classifier import classify as _rc_classify
+        result = _rc_classify(msg_lower)
+        return result.get("confidence", 0.5), result.get("type", "neutral"), result.get("dimensions", [])
+    except (ImportError, Exception):
+        pass
+
+    # Simple keyword fallback
+    rejection_hits = sum(1 for kw in _REJECTION_KEYWORDS if kw in msg_lower)
+    acceptance_hits = sum(1 for kw in _ACCEPTANCE_KEYWORDS if kw in msg_lower)
+
+    if rejection_hits > acceptance_hits and rejection_hits >= 1:
+        conf = min(0.6 + rejection_hits * 0.15, 0.95)
+        return conf, "user_rejected", []
+    elif acceptance_hits > rejection_hits and acceptance_hits >= 1:
+        conf = min(0.6 + acceptance_hits * 0.15, 0.95)
+        return conf, "user_accepted", []
+
+    return 0.3, "unrelated", []
+
+
+def _fire_user_turn_signal(
+    base_url, api_key, tenant_id, session, session_id,
+    signal_type, confidence, dimensions, raw_evidence,
+):
+    # Drop unrelated/neutral signals — absence of reaction is not a signal
+    if signal_type not in ("user_rejected", "user_accepted"):
+        return
+    strength = 0.0 if signal_type == "user_rejected" else 1.0
+    payload = {
+        "trace_id": session.get("trace_id", ""),
+        "signal_type": signal_type,
+        "signal_source": "user_implicit",
+        "strength": strength,
+        "confidence": confidence,
+        "goal": session.get("goal", ""),
+        "session_id": session_id,
+        "raw_evidence": raw_evidence[:500],
+    }
+    if dimensions:
+        payload["dimensions"] = dimensions
+    _emit_signal_http(base_url, api_key, tenant_id, payload)
+
+
+_LLM_CLASSIFY_PROMPT = (
+    "Prior goal: {goal}. User message: {user_message}. "
+    "Did user: (A) accept and move on, (B) reject and re-prompt, (C) unrelated. "
+    "If B, which dimensions failed: length/tone/format/content/factuality. "
+    'Return JSON: {{"type": "acceptance"|"rejection"|"neutral", "confidence": 0.0-1.0, "dimensions": [...]}}'
+)
+
+
+def _llm_classify_and_send(base_url, api_key, tenant_id, session, session_id, user_message):
+    """Run LLM classifier and send the resulting signal. Runs in background thread."""
+    try:
+        prompt = _LLM_CLASSIFY_PROMPT.format(
+            goal=session.get("goal", ""),
+            user_message=user_message[:400],
+        )
+
+        raw = None
+        # Try DeepSeek first, then OpenAI
+        for env_key, model_id, api_base in [
+            ("DEEPSEEK_API_KEY", "deepseek-chat", "https://api.deepseek.com"),
+            ("OPENAI_API_KEY", "gpt-4o-mini", None),
+        ]:
+            key = os.environ.get(env_key)
+            if not key:
+                continue
+            try:
+                import openai as _openai
+                kwargs = {"api_key": key}
+                if api_base:
+                    kwargs["base_url"] = api_base
+                client = _openai.OpenAI(**kwargs)
+                resp = client.chat.completions.create(
+                    model=model_id,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=120,
+                    temperature=0.0,
+                )
+                raw = (resp.choices[0].message.content or "").strip()
+                break
+            except Exception:
+                continue
+
+        if not raw:
+            return
+
+        # Parse JSON from LLM response
+        result = json.loads(raw)
+        signal_type = result.get("type", "neutral")
+        confidence = float(result.get("confidence", 0.5))
+        dimensions = result.get("dimensions", [])
+
+        _fire_user_turn_signal(
+            base_url, api_key, tenant_id, session, session_id,
+            signal_type, confidence, dimensions, user_message,
+        )
+    except Exception as e:
+        logger.warning("LLM classify failed: %s", e)
+
+
+_ACTION_STRENGTH = {
+    "output_used_verbatim": 1.0,
+    "output_copied": 0.9,
+    "output_edited": 0.4,
+    "output_discarded": 0.0,
+}
+
+
+def report_action(
+    session_id: str,
+    action_type: str,
+    edit_diff: Optional[str] = None,
+) -> None:
+    """
+    Record a downstream action on the pipeline output.
+
+    action_type: "output_used_verbatim" | "output_edited" | "output_copied" | "output_discarded"
+    Highest-quality signal — overrides any pending classifier result.
+    Fire-and-forget.
+    """
+    try:
+        session = _read_session(session_id)
+        if session is None:
+            return
+
+        api_key, tenant_id, base_url = _fb_config()
+        if not api_key or not tenant_id:
+            return
+
+        strength = _ACTION_STRENGTH.get(action_type, 0.5)
+        payload = {
+            "trace_id": session.get("trace_id", ""),
+            "signal_type": action_type,
+            "signal_source": "downstream",
+            "strength": strength,
+            "confidence": 1.0,
+            "goal": session.get("goal", ""),
+            "session_id": session_id,
+        }
+        if edit_diff:
+            payload["raw_evidence"] = edit_diff[:500]
+
+        def _send():
+            try:
+                _emit_signal_http(base_url, api_key, tenant_id, payload)
+            except Exception:
+                pass
+
+        threading.Thread(target=_send, daemon=True).start()
+    except Exception as e:
+        logger.warning("report_action failed: %s", e)
+
+
+_DIMENSION_DEFS = {
+    "length": {"label": "Length", "options": [-1, 0, 1], "labels": ["Too long", "Good", "Too short"]},
+    "tone": {"label": "Tone", "options": [-1, 0, 1], "labels": ["Too casual", "Good", "Too formal"]},
+    "content": {"label": "Content", "options": [-1, 0, 1], "labels": ["Off-topic", "Good", "Missing info"]},
+    "factuality": {"label": "Factuality", "options": [-1, 0, 1], "labels": ["Inaccurate", "Good", "Unsure"]},
+    "format": {"label": "Format", "options": [-1, 0, 1], "labels": ["Poor format", "Good", "Needs restructuring"]},
+}
+
+
+def request_feedback(
+    dimensions: Optional[list] = None,
+) -> dict:
+    """
+    SDK-only. Returns a structured feedback form dict the developer renders
+    to their users. No network call.
+    """
+    if dimensions is None:
+        dimensions = ["length", "tone", "content", "factuality", "format"]
+    return {
+        "question": "How was this response?",
+        "dimensions": {
+            d: _DIMENSION_DEFS.get(d, {"label": d.title(), "options": [-1, 0, 1], "labels": ["Bad", "Good", "Needs work"]})
+            for d in dimensions
+        },
+    }
+
+
+def submit_feedback(session_id: str, ratings: dict) -> None:
+    """
+    Submit explicit user feedback. Writes ONE signal row PER dimension
+    with a non-zero rating. Fire-and-forget.
+
+    ratings: {"length": -1, "tone": 0, "content": 1, ...}
+    Values: -1 (negative), 0 (neutral — skipped), 1 (positive)
+    """
+    try:
+        session = _read_session(session_id)
+        if session is None:
+            return
+
+        api_key, tenant_id, base_url = _fb_config()
+        if not api_key or not tenant_id:
+            return
+
+        trace_id = session.get("trace_id", "")
+        goal_val = session.get("goal", "")
+
+        def _send_all():
+            try:
+                for dimension, rating in ratings.items():
+                    if rating == 0:
+                        continue
+                    strength = 0.0 if rating == -1 else 1.0
+                    payload = {
+                        "trace_id": trace_id,
+                        "signal_type": "explicit_feedback",
+                        "signal_source": "explicit_feedback",
+                        "strength": strength,
+                        "confidence": 1.0,
+                        "dimension": dimension,
+                        "goal": goal_val,
+                        "session_id": session_id,
+                    }
+                    _emit_signal_http(base_url, api_key, tenant_id, payload)
+            except Exception:
+                pass
+
+        threading.Thread(target=_send_all, daemon=True).start()
+    except Exception as e:
+        logger.warning("submit_feedback failed: %s", e)
+
 
 def emit_signal(
     signal_type: str,
