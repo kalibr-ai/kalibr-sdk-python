@@ -36,7 +36,7 @@ CLI Usage:
     kalibr version                       # Show version
 """
 
-__version__ = "1.11.6"
+__version__ = "1.12.0"
 
 # Auto-instrument LLM SDKs on import (can be disabled via env var)
 import os
@@ -100,7 +100,11 @@ from .intelligence import (
     FAILURE_CATEGORIES,
 )
 from .router import Router, TraceHandle
-from .feedback import KalibrFeedback, track_run, user_rejected, user_accepted, get_feedback, classify_satisfaction, classify_satisfaction_async, emit_signal
+from .feedback import (
+    KalibrFeedback, track_run, user_rejected, user_accepted, get_feedback,
+    classify_satisfaction, classify_satisfaction_async, emit_signal,
+    report_pipeline, report_user_turn, report_action, request_feedback, submit_feedback,
+)
 
 if os.getenv("KALIBR_AUTO_INSTRUMENT", "true").lower() == "true":
     # Setup OpenTelemetry collector
@@ -196,4 +200,10 @@ __all__ = [
     "get_feedback",
     "classify_satisfaction",
     "classify_satisfaction_async",
+    "emit_signal",
+    "report_pipeline",
+    "report_user_turn",
+    "report_action",
+    "request_feedback",
+    "submit_feedback",
 ]
