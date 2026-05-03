@@ -30,6 +30,16 @@ from typing import Optional
 
 logger = logging.getLogger("kalibr.feedback")
 
+_session_locks: dict = {}
+_session_locks_mutex = threading.Lock()
+
+
+def _get_session_lock(session_id: str):
+    with _session_locks_mutex:
+        if session_id not in _session_locks:
+            _session_locks[session_id] = threading.Lock()
+        return _session_locks[session_id]
+
 
 class KalibrFeedback:
     """
@@ -428,6 +438,9 @@ def report_pipeline(
             "model": model,
             "meta_prompt_id": meta_prompt_id,
             "ts": time.time(),
+            "deltas": [],
+            "momentum": "flat",
+            "last_user_message": "",
         }
         _get_session_path(session_id).write_text(json.dumps(session_data))
 
@@ -450,6 +463,55 @@ def report_pipeline(
         logger.warning("report_pipeline failed: %s", e)
 
 
+def _jaccard_similarity(text1: str, text2: str) -> float:
+    """Jaccard similarity between two texts. No model needed."""
+    words1 = set(text1.lower().split())
+    words2 = set(text2.lower().split())
+    if not words1 or not words2:
+        return 0.5
+    intersection = len(words1 & words2)
+    union = len(words1 | words2)
+    return intersection / union if union > 0 else 0.5
+
+
+_FRUST_WORDS = {"again", "wrong", "bad", "no", "fix", "redo", "useless", "terrible", "horrible", "stop", "different", "change", "not what"}
+_AFFIRM_WORDS = {"thanks", "perfect", "great", "yes", "good", "exactly", "awesome", "love", "correct", "nice"}
+
+
+def _compute_delta(prev_msg: str, curr_msg: str) -> dict:
+    """Compute delta between two consecutive user messages."""
+    return {
+        "jaccard": _jaccard_similarity(prev_msg, curr_msg),
+        "len_ratio": len(curr_msg) / max(len(prev_msg), 1),
+        "frust": sum(1 for w in _FRUST_WORDS if w in curr_msg.lower()),
+        "affirm": sum(1 for w in _AFFIRM_WORDS if w in curr_msg.lower()),
+    }
+
+
+def _compute_momentum(deltas: list) -> str:
+    """
+    Compute conversation momentum from last 4 deltas.
+    closing = user converging (satisfied, getting what they want)
+    widening = user diverging (frustrated, not getting what they want)
+    flat = no clear trend
+    """
+    if not deltas or len(deltas) < 2:
+        return "flat"
+    recent = deltas[-4:]
+    avg_jaccard = sum(d["jaccard"] for d in recent) / len(recent)
+    avg_len = sum(d["len_ratio"] for d in recent) / len(recent)
+    total_frust = sum(d["frust"] for d in recent)
+    total_affirm = sum(d["affirm"] for d in recent)
+
+    if avg_jaccard > 0.50 and avg_len < 1.1 and total_frust == 0:
+        return "closing"
+    if total_affirm >= 2 and total_frust == 0 and avg_len < 1.2:
+        return "closing"
+    if avg_jaccard < 0.35 or total_frust > 1 or (avg_len > 1.3 and total_frust >= 1):
+        return "widening"
+    return "flat"
+
+
 def report_user_turn(session_id: str, user_message: str) -> None:
     """
     Classify a user follow-up message against the anchored session.
@@ -459,30 +521,47 @@ def report_user_turn(session_id: str, user_message: str) -> None:
     Never blocks the caller.
     """
     try:
-        session = _read_session(session_id)
-        if session is None:
-            return
+        lock = _get_session_lock(session_id)
+        with lock:
+            session = _read_session(session_id)
+            if session is None:
+                return
 
-        api_key, tenant_id, base_url = _fb_config()
-        if not api_key or not tenant_id:
-            return
+            # Delta tracking
+            prev_msg = session.get("last_user_message", "")
+            if prev_msg:
+                delta = _compute_delta(prev_msg, user_message)
+                deltas = session.get("deltas", [])
+                deltas.append(delta)
+                if len(deltas) > 8:
+                    deltas = deltas[-8:]
+                session["deltas"] = deltas
+                session["momentum"] = _compute_momentum(deltas)
+            session["last_user_message"] = user_message
+            # Persist session with updated delta state
+            _get_session_path(session_id).write_text(json.dumps(session))
 
-        # Layer 1 — heuristic classifier
-        confidence, signal_type, dimensions = _heuristic_classify(user_message)
+            api_key, tenant_id, base_url = _fb_config()
+            if not api_key or not tenant_id:
+                return
 
-        if confidence >= 0.85:
-            _fire_user_turn_signal(
-                base_url, api_key, tenant_id, session, session_id,
-                signal_type, confidence, dimensions, user_message,
-            )
-        else:
-            # Fire LLM classifier in background thread
-            t = threading.Thread(
-                target=_llm_classify_and_send,
-                args=(base_url, api_key, tenant_id, session, session_id, user_message),
-                daemon=True,
-            )
-            t.start()
+            # Layer 1 — heuristic classifier
+            confidence, signal_type, dimensions = _heuristic_classify(user_message)
+
+            if confidence >= 0.85:
+                _fire_user_turn_signal(
+                    base_url, api_key, tenant_id, session, session_id,
+                    signal_type, confidence, dimensions, user_message,
+                    momentum=session.get("momentum", "flat"),
+                )
+            else:
+                # Fire LLM classifier in background thread
+                t = threading.Thread(
+                    target=_llm_classify_and_send,
+                    args=(base_url, api_key, tenant_id, session, session_id, user_message),
+                    daemon=True,
+                )
+                t.start()
     except Exception as e:
         logger.warning("report_user_turn failed: %s", e)
 
@@ -526,6 +605,7 @@ def _heuristic_classify(user_message: str) -> tuple:
 def _fire_user_turn_signal(
     base_url, api_key, tenant_id, session, session_id,
     signal_type, confidence, dimensions, raw_evidence,
+    momentum: str = "flat",
 ):
     # Drop unrelated/neutral signals — absence of reaction is not a signal
     if signal_type not in ("user_rejected", "user_accepted"):
@@ -540,6 +620,8 @@ def _fire_user_turn_signal(
         "goal": session.get("goal", ""),
         "session_id": session_id,
         "raw_evidence": raw_evidence[:500],
+        # TODO: re-enable once API schema accepts momentum field
+        # "momentum": momentum,
     }
     if dimensions:
         payload["dimensions"] = dimensions
@@ -597,9 +679,16 @@ def _llm_classify_and_send(base_url, api_key, tenant_id, session, session_id, us
         confidence = float(result.get("confidence", 0.5))
         dimensions = result.get("dimensions", [])
 
+        try:
+            s = _read_session(session_id)
+            cur_momentum = s.get("momentum", "flat") if s else "flat"
+        except Exception:
+            cur_momentum = "flat"
+
         _fire_user_turn_signal(
             base_url, api_key, tenant_id, session, session_id,
             signal_type, confidence, dimensions, user_message,
+            momentum=cur_momentum,
         )
     except Exception as e:
         logger.warning("LLM classify failed: %s", e)
@@ -727,3 +816,59 @@ def emit_signal(
         return r.status_code in (200, 201)
     except Exception:
         return False
+
+
+def report_session_end(session_id: str) -> None:
+    """
+    Fire a weak behavioral signal when a session ends without explicit feedback.
+
+    Uses conversation momentum (delta trajectory) to determine signal direction:
+    - closing momentum → weak positive (user probably got value and left)
+    - widening momentum → weak negative (user probably gave up)
+    - flat momentum → no signal emitted (silence without context = noise)
+
+    Always fires with low confidence (0.4) so it cannot dominate real signals.
+    Requires at least 2 deltas in session history — otherwise emits nothing.
+
+    Call this when:
+    - Session timeout detected
+    - User explicitly closes/ends the conversation
+    - Application session lifecycle ends
+    """
+    try:
+        session = _read_session(session_id)
+        if session is None:
+            return
+
+        deltas = session.get("deltas", [])
+        if len(deltas) < 2:
+            return  # not enough trajectory data — silence is just noise
+
+        mom = _compute_momentum(deltas)
+        if mom == "flat":
+            return  # no interpretable signal
+
+        # closing = user got value and left → weak positive
+        # widening = user gave up → weak negative
+        strength = 0.65 if mom == "closing" else 0.25
+        signal_type = "user_accepted" if mom == "closing" else "user_rejected"
+
+        emit_signal(
+            signal_type=signal_type,
+            strength=strength,
+            confidence=0.4,  # always low — inferred from silence, inherently uncertain
+            trace_id=session.get("trace_id", ""),
+            goal=session.get("goal", ""),
+            raw_evidence="session_end_inferred",
+        )
+
+        logger.debug(
+            "session_end_signal",
+            session_id=session_id,
+            momentum=mom,
+            signal_type=signal_type,
+            strength=strength,
+            delta_count=len(deltas),
+        )
+    except Exception as e:
+        logger.warning("report_session_end failed: %s", e)
