@@ -30,6 +30,16 @@ from typing import Optional
 
 logger = logging.getLogger("kalibr.feedback")
 
+_session_locks: dict = {}
+_session_locks_mutex = threading.Lock()
+
+
+def _get_session_lock(session_id: str):
+    with _session_locks_mutex:
+        if session_id not in _session_locks:
+            _session_locks[session_id] = threading.Lock()
+        return _session_locks[session_id]
+
 
 class KalibrFeedback:
     """
@@ -453,8 +463,8 @@ def report_pipeline(
         logger.warning("report_pipeline failed: %s", e)
 
 
-def _bag_of_words_cosine(text1: str, text2: str) -> float:
-    """Simple bag-of-words cosine similarity. No model needed."""
+def _jaccard_similarity(text1: str, text2: str) -> float:
+    """Jaccard similarity between two texts. No model needed."""
     words1 = set(text1.lower().split())
     words2 = set(text2.lower().split())
     if not words1 or not words2:
@@ -471,7 +481,7 @@ _AFFIRM_WORDS = {"thanks", "perfect", "great", "yes", "good", "exactly", "awesom
 def _compute_delta(prev_msg: str, curr_msg: str) -> dict:
     """Compute delta between two consecutive user messages."""
     return {
-        "cosine": _bag_of_words_cosine(prev_msg, curr_msg),
+        "jaccard": _jaccard_similarity(prev_msg, curr_msg),
         "len_ratio": len(curr_msg) / max(len(prev_msg), 1),
         "frust": sum(1 for w in _FRUST_WORDS if w in curr_msg.lower()),
         "affirm": sum(1 for w in _AFFIRM_WORDS if w in curr_msg.lower()),
@@ -488,14 +498,16 @@ def _compute_momentum(deltas: list) -> str:
     if not deltas or len(deltas) < 2:
         return "flat"
     recent = deltas[-4:]
-    avg_cosine = sum(d["cosine"] for d in recent) / len(recent)
+    avg_jaccard = sum(d["jaccard"] for d in recent) / len(recent)
     avg_len = sum(d["len_ratio"] for d in recent) / len(recent)
     total_frust = sum(d["frust"] for d in recent)
     total_affirm = sum(d["affirm"] for d in recent)
 
-    if avg_cosine > 0.70 and avg_len < 1.1 and total_frust == 0:
+    if avg_jaccard > 0.50 and avg_len < 1.1 and total_frust == 0:
         return "closing"
-    if avg_cosine < 0.55 or total_frust > 1 or (avg_len > 1.3 and total_frust >= 1):
+    if total_affirm >= 2 and total_frust == 0 and avg_len < 1.2:
+        return "closing"
+    if avg_jaccard < 0.35 or total_frust > 1 or (avg_len > 1.3 and total_frust >= 1):
         return "widening"
     return "flat"
 
@@ -509,45 +521,47 @@ def report_user_turn(session_id: str, user_message: str) -> None:
     Never blocks the caller.
     """
     try:
-        session = _read_session(session_id)
-        if session is None:
-            return
+        lock = _get_session_lock(session_id)
+        with lock:
+            session = _read_session(session_id)
+            if session is None:
+                return
 
-        # Delta tracking
-        prev_msg = session.get("last_user_message", "")
-        if prev_msg:
-            delta = _compute_delta(prev_msg, user_message)
-            deltas = session.get("deltas", [])
-            deltas.append(delta)
-            if len(deltas) > 8:
-                deltas = deltas[-8:]
-            session["deltas"] = deltas
-            session["momentum"] = _compute_momentum(deltas)
-        session["last_user_message"] = user_message
-        # Persist session with updated delta state
-        _get_session_path(session_id).write_text(json.dumps(session))
+            # Delta tracking
+            prev_msg = session.get("last_user_message", "")
+            if prev_msg:
+                delta = _compute_delta(prev_msg, user_message)
+                deltas = session.get("deltas", [])
+                deltas.append(delta)
+                if len(deltas) > 8:
+                    deltas = deltas[-8:]
+                session["deltas"] = deltas
+                session["momentum"] = _compute_momentum(deltas)
+            session["last_user_message"] = user_message
+            # Persist session with updated delta state
+            _get_session_path(session_id).write_text(json.dumps(session))
 
-        api_key, tenant_id, base_url = _fb_config()
-        if not api_key or not tenant_id:
-            return
+            api_key, tenant_id, base_url = _fb_config()
+            if not api_key or not tenant_id:
+                return
 
-        # Layer 1 — heuristic classifier
-        confidence, signal_type, dimensions = _heuristic_classify(user_message)
+            # Layer 1 — heuristic classifier
+            confidence, signal_type, dimensions = _heuristic_classify(user_message)
 
-        if confidence >= 0.85:
-            _fire_user_turn_signal(
-                base_url, api_key, tenant_id, session, session_id,
-                signal_type, confidence, dimensions, user_message,
-                momentum=session.get("momentum", "flat"),
-            )
-        else:
-            # Fire LLM classifier in background thread
-            t = threading.Thread(
-                target=_llm_classify_and_send,
-                args=(base_url, api_key, tenant_id, session, session_id, user_message),
-                daemon=True,
-            )
-            t.start()
+            if confidence >= 0.85:
+                _fire_user_turn_signal(
+                    base_url, api_key, tenant_id, session, session_id,
+                    signal_type, confidence, dimensions, user_message,
+                    momentum=session.get("momentum", "flat"),
+                )
+            else:
+                # Fire LLM classifier in background thread
+                t = threading.Thread(
+                    target=_llm_classify_and_send,
+                    args=(base_url, api_key, tenant_id, session, session_id, user_message),
+                    daemon=True,
+                )
+                t.start()
     except Exception as e:
         logger.warning("report_user_turn failed: %s", e)
 
@@ -606,7 +620,8 @@ def _fire_user_turn_signal(
         "goal": session.get("goal", ""),
         "session_id": session_id,
         "raw_evidence": raw_evidence[:500],
-        "momentum": momentum,
+        # TODO: re-enable once API schema accepts momentum field
+        # "momentum": momentum,
     }
     if dimensions:
         payload["dimensions"] = dimensions
@@ -664,9 +679,16 @@ def _llm_classify_and_send(base_url, api_key, tenant_id, session, session_id, us
         confidence = float(result.get("confidence", 0.5))
         dimensions = result.get("dimensions", [])
 
+        try:
+            s = _read_session(session_id)
+            cur_momentum = s.get("momentum", "flat") if s else "flat"
+        except Exception:
+            cur_momentum = "flat"
+
         _fire_user_turn_signal(
             base_url, api_key, tenant_id, session, session_id,
             signal_type, confidence, dimensions, user_message,
+            momentum=cur_momentum,
         )
     except Exception as e:
         logger.warning("LLM classify failed: %s", e)

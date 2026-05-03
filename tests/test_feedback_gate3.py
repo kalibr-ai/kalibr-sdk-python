@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from kalibr.feedback import (
-    _bag_of_words_cosine,
+    _jaccard_similarity,
     _compute_delta,
     _compute_momentum,
     report_session_end,
@@ -20,11 +20,11 @@ from kalibr.feedback import (
 class TestComputeDelta:
     def test_compute_delta_basic(self):
         delta = _compute_delta("hello world", "hello there world")
-        assert "cosine" in delta
+        assert "jaccard" in delta
         assert "len_ratio" in delta
         assert "frust" in delta
         assert "affirm" in delta
-        assert 0.0 <= delta["cosine"] <= 1.0
+        assert 0.0 <= delta["jaccard"] <= 1.0
         assert delta["len_ratio"] > 0
         assert isinstance(delta["frust"], int)
         assert isinstance(delta["affirm"], int)
@@ -42,28 +42,28 @@ class TestComputeMomentum:
     def test_compute_momentum_closing(self):
         # High cosine, short messages, no frustration, some affirmation
         deltas = [
-            {"cosine": 0.8, "len_ratio": 0.9, "frust": 0, "affirm": 1},
-            {"cosine": 0.75, "len_ratio": 1.0, "frust": 0, "affirm": 1},
-            {"cosine": 0.85, "len_ratio": 0.8, "frust": 0, "affirm": 2},
+            {"jaccard": 0.8, "len_ratio": 0.9, "frust": 0, "affirm": 1},
+            {"jaccard": 0.75, "len_ratio": 1.0, "frust": 0, "affirm": 1},
+            {"jaccard": 0.85, "len_ratio": 0.8, "frust": 0, "affirm": 2},
         ]
         assert _compute_momentum(deltas) == "closing"
 
     def test_compute_momentum_widening(self):
         # Low cosine, frustrated messages
         deltas = [
-            {"cosine": 0.3, "len_ratio": 1.5, "frust": 2, "affirm": 0},
-            {"cosine": 0.4, "len_ratio": 1.4, "frust": 1, "affirm": 0},
+            {"jaccard": 0.3, "len_ratio": 1.5, "frust": 2, "affirm": 0},
+            {"jaccard": 0.4, "len_ratio": 1.4, "frust": 1, "affirm": 0},
         ]
         assert _compute_momentum(deltas) == "widening"
 
     def test_compute_momentum_flat_insufficient_deltas(self):
         assert _compute_momentum([]) == "flat"
-        assert _compute_momentum([{"cosine": 0.5, "len_ratio": 1.0, "frust": 0, "affirm": 0}]) == "flat"
+        assert _compute_momentum([{"jaccard": 0.5, "len_ratio": 1.0, "frust": 0, "affirm": 0}]) == "flat"
 
     def test_compute_momentum_flat_no_clear_signal(self):
         deltas = [
-            {"cosine": 0.6, "len_ratio": 1.1, "frust": 0, "affirm": 0},
-            {"cosine": 0.65, "len_ratio": 1.0, "frust": 0, "affirm": 0},
+            {"jaccard": 0.42, "len_ratio": 1.1, "frust": 0, "affirm": 0},
+            {"jaccard": 0.45, "len_ratio": 1.0, "frust": 0, "affirm": 0},
         ]
         assert _compute_momentum(deltas) == "flat"
 
@@ -88,8 +88,8 @@ class TestReportSessionEnd:
     @patch("kalibr.feedback._get_session_path")
     def test_report_session_end_no_signal_on_flat(self, mock_path, mock_emit, tmp_path):
         path = self._write_session(tmp_path, "sess1", [
-            {"cosine": 0.6, "len_ratio": 1.0, "frust": 0, "affirm": 0},
-            {"cosine": 0.62, "len_ratio": 1.05, "frust": 0, "affirm": 0},
+            {"jaccard": 0.42, "len_ratio": 1.0, "frust": 0, "affirm": 0},
+            {"jaccard": 0.45, "len_ratio": 1.05, "frust": 0, "affirm": 0},
         ])
         mock_path.return_value = path
         report_session_end("sess1")
@@ -99,9 +99,9 @@ class TestReportSessionEnd:
     @patch("kalibr.feedback._get_session_path")
     def test_report_session_end_closing_emits_positive(self, mock_path, mock_emit, tmp_path):
         path = self._write_session(tmp_path, "sess2", [
-            {"cosine": 0.8, "len_ratio": 0.9, "frust": 0, "affirm": 1},
-            {"cosine": 0.75, "len_ratio": 1.0, "frust": 0, "affirm": 1},
-            {"cosine": 0.85, "len_ratio": 0.8, "frust": 0, "affirm": 2},
+            {"jaccard": 0.8, "len_ratio": 0.9, "frust": 0, "affirm": 1},
+            {"jaccard": 0.75, "len_ratio": 1.0, "frust": 0, "affirm": 1},
+            {"jaccard": 0.85, "len_ratio": 0.8, "frust": 0, "affirm": 2},
         ])
         mock_path.return_value = path
         report_session_end("sess2")
@@ -115,8 +115,8 @@ class TestReportSessionEnd:
     @patch("kalibr.feedback._get_session_path")
     def test_report_session_end_widening_emits_negative(self, mock_path, mock_emit, tmp_path):
         path = self._write_session(tmp_path, "sess3", [
-            {"cosine": 0.3, "len_ratio": 1.5, "frust": 2, "affirm": 0},
-            {"cosine": 0.4, "len_ratio": 1.4, "frust": 1, "affirm": 0},
+            {"jaccard": 0.3, "len_ratio": 1.5, "frust": 2, "affirm": 0},
+            {"jaccard": 0.4, "len_ratio": 1.4, "frust": 1, "affirm": 0},
         ])
         mock_path.return_value = path
         report_session_end("sess3")
@@ -130,7 +130,7 @@ class TestReportSessionEnd:
     @patch("kalibr.feedback._get_session_path")
     def test_report_session_end_requires_2_deltas(self, mock_path, mock_emit, tmp_path):
         path = self._write_session(tmp_path, "sess4", [
-            {"cosine": 0.3, "len_ratio": 1.5, "frust": 2, "affirm": 0},
+            {"jaccard": 0.3, "len_ratio": 1.5, "frust": 2, "affirm": 0},
         ])
         mock_path.return_value = path
         report_session_end("sess4")
