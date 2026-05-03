@@ -19,10 +19,16 @@ def signup(
 
     console.print(f"[bold]Creating Kalibr account for {email}...[/bold]")
 
+    provision_secret = os.environ.get("KALIBR_PROVISION_SECRET", "")
+    headers = {"Content-Type": "application/json"}
+    if provision_secret:
+        headers["X-Provision-Secret"] = provision_secret
+
     try:
         resp = requests.post(
             f"{BACKEND_URL}/api/cli-auth/signup-and-provision",
             json={"human_email": email, "agent_name": agent_name},
+            headers=headers,
             timeout=20,
         )
 

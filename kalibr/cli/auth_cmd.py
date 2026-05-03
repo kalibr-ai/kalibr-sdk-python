@@ -55,10 +55,16 @@ def _agent_signup(email: str | None) -> None:
         console.print("  Your human's email address so they can claim the dashboard.")
         raise typer.Exit(1)
 
+    provision_secret = os.environ.get("KALIBR_PROVISION_SECRET", "")
+    headers = {"Content-Type": "application/json"}
+    if provision_secret:
+        headers["X-Provision-Secret"] = provision_secret
+
     try:
         resp = requests.post(
             f"{BACKEND_URL}/api/cli-auth/signup-and-provision",
             json={"agent_name": "kalibr-agent", "human_email": email},
+            headers=headers,
             timeout=15,
         )
     except requests.RequestException as e:
