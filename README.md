@@ -507,7 +507,6 @@ pytest
 - **Python:** 3.10, 3.11, 3.12
 - **Status:** Production. Used in live agent pipelines.
 - **Latest changes (unreleased):** Tavily search provider, Nebius AI Studio support
-- **Most recent release (1.9.3):** HuggingFace model pricing fixes, cost precision to 4 decimal places
 - **TS SDK counterpart:** `@kalibr/sdk` v1.11.7 — see [kalibr-sdk-ts](https://github.com/kalibr-ai/kalibr-sdk-ts)
 
 ## Contributing
