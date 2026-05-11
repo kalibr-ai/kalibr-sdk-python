@@ -620,8 +620,7 @@ def _fire_user_turn_signal(
         "goal": session.get("goal", ""),
         "session_id": session_id,
         "raw_evidence": raw_evidence[:500],
-        # TODO: re-enable once API schema accepts momentum field
-        # "momentum": momentum,
+        "momentum": momentum,
     }
     if dimensions:
         payload["dimensions"] = dimensions
