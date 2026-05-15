@@ -519,8 +519,14 @@ def report_user_turn(session_id: str, user_message: str) -> None:
     Layer 1: heuristic keyword check (fast).
     Layer 2: LLM classifier in background thread if confidence < 0.85.
     Never blocks the caller.
+
+    Security: PII is redacted before any processing. Only derived scores
+    (delta, momentum, dimensions) are sent to Kalibr — never raw user text.
     """
     try:
+        from kalibr.redaction import redact_text
+        user_message = redact_text(user_message)
+
         lock = _get_session_lock(session_id)
         with lock:
             session = _read_session(session_id)
@@ -551,7 +557,7 @@ def report_user_turn(session_id: str, user_message: str) -> None:
             if confidence >= 0.85:
                 _fire_user_turn_signal(
                     base_url, api_key, tenant_id, session, session_id,
-                    signal_type, confidence, dimensions, user_message,
+                    signal_type, confidence, dimensions,
                     momentum=session.get("momentum", "flat"),
                 )
             else:
@@ -604,13 +610,14 @@ def _heuristic_classify(user_message: str) -> tuple:
 
 def _fire_user_turn_signal(
     base_url, api_key, tenant_id, session, session_id,
-    signal_type, confidence, dimensions, raw_evidence,
+    signal_type, confidence, dimensions,
     momentum: str = "flat",
 ):
     # Drop unrelated/neutral signals — absence of reaction is not a signal
     if signal_type not in ("user_rejected", "user_accepted"):
         return
     strength = 0.0 if signal_type == "user_rejected" else 1.0
+    # Security: only derived scores are sent — never raw user text
     payload = {
         "trace_id": session.get("trace_id", ""),
         "signal_type": signal_type,
@@ -619,7 +626,6 @@ def _fire_user_turn_signal(
         "confidence": confidence,
         "goal": session.get("goal", ""),
         "session_id": session_id,
-        "raw_evidence": raw_evidence[:500],
         "momentum": momentum,
     }
     if dimensions:
@@ -686,7 +692,7 @@ def _llm_classify_and_send(base_url, api_key, tenant_id, session, session_id, us
 
         _fire_user_turn_signal(
             base_url, api_key, tenant_id, session, session_id,
-            signal_type, confidence, dimensions, user_message,
+            signal_type, confidence, dimensions,
             momentum=cur_momentum,
         )
     except Exception as e:
