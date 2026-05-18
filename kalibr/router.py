@@ -490,11 +490,15 @@ class Router:
 
                     # Fire-and-forget baseline outcome report so every successful dispatch
                     # produces at least one signal — never blocks, never raises.
+                    # Skip if a scoring path already reported, to avoid double-reporting.
                     should_auto_fire = False
-                    with _auto_reported_lock:
-                        if trace_id not in _auto_reported_traces:
-                            _auto_reported_traces.add(trace_id)
-                            should_auto_fire = True
+                    if not self._outcome_reported:
+                        with _auto_reported_lock:
+                            if len(_auto_reported_traces) > 50000:
+                                _auto_reported_traces.clear()
+                            if trace_id not in _auto_reported_traces:
+                                _auto_reported_traces.add(trace_id)
+                                should_auto_fire = True
                     if should_auto_fire:
                         threading.Thread(
                             target=_auto_report_outcome,

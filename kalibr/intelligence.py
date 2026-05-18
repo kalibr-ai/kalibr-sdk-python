@@ -50,6 +50,18 @@ DEFAULT_INTELLIGENCE_URL = "https://kalibr-intelligence.fly.dev"
 _decide_cache: dict = {}
 _decide_cache_lock = threading.Lock()
 _DECIDE_CACHE_TTL = 30.0
+_DECIDE_CACHE_MAX_SIZE = 1000
+
+
+def _prune_decide_cache() -> None:
+    """Remove entries older than TTL. Caller must hold _decide_cache_lock."""
+    now = time.time()
+    expired_keys = [
+        key for key, (_, cached_at) in _decide_cache.items()
+        if now - cached_at >= _DECIDE_CACHE_TTL
+    ]
+    for key in expired_keys:
+        del _decide_cache[key]
 
 FAILURE_CATEGORIES = [
     "timeout", "context_exceeded", "tool_error", "rate_limited",
@@ -849,6 +861,8 @@ def decide(
 
     with _decide_cache_lock:
         _decide_cache[cache_key] = (decision, time.time())
+        if len(_decide_cache) > _DECIDE_CACHE_MAX_SIZE:
+            _prune_decide_cache()
 
     return decision
 
