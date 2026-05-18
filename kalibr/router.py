@@ -74,6 +74,209 @@ def _create_context_with_trace_id(trace_id_hex: str) -> Optional[Context]:
         return None
 
 
+class _HealLoop:
+    """Full heal loop ported from kalibr-app's pipeline_executor.
+
+    Three building blocks:
+      * _gate1_eval — synchronous structural eval (no LLM)
+      * _classify_failure — deterministic keyword classification of failures
+      * _repair_prompt — deterministic system-prompt repair (no LLM)
+
+    run() drives the loop: try each path, on gate1 failure repair the prompt
+    up to max_retries, then swap to the next path.
+    """
+
+    def _gate1_eval(self, goal: str, output: str) -> bool:
+        """Structural pass/fail for the given goal. No LLM."""
+        if not output or not output.strip():
+            return False
+
+        output = output.strip()
+
+        if goal == "code_generation":
+            import ast
+            import re
+            blocks = re.findall(r"```(?:\w+)?\s*\n(.*?)```", output, re.DOTALL)
+            code = "\n".join(blocks) if blocks else output
+            try:
+                ast.parse(code)
+                return True
+            except SyntaxError:
+                pass
+            has_structure = bool(re.search(
+                r"\b(function|const|let|var|class|interface|type|import|export)\s+\w+",
+                output,
+            ))
+            return has_structure
+
+        if goal == "summarization":
+            if len(output) < 50:
+                return False
+            sentences = [s for s in output.split(". ") if s.strip()]
+            return len(sentences) >= 3
+
+        if goal == "outreach_generation":
+            lines = [l.strip() for l in output.splitlines() if l.strip()]
+            if not lines:
+                return False
+            has_subject_line = any(5 < len(l) < 200 for l in lines[:3])
+            return has_subject_line and 50 <= len(output) <= 2000
+
+        if goal == "classification":
+            stripped = output.strip()
+            if not stripped:
+                return False
+            return len(stripped) < 200
+
+        return len(output) > 20
+
+    def _classify_failure(self, goal: str, output: str, error: Optional[str]) -> str:
+        """Deterministic classification of why the call failed."""
+        err_lower = (error or "").lower()
+
+        if err_lower:
+            if "timeout" in err_lower or "timed out" in err_lower:
+                return "timeout"
+            if "rate limit" in err_lower or "rate_limit" in err_lower or "429" in err_lower:
+                return "rate_limited"
+            if "context" in err_lower and (
+                "length" in err_lower or "exceed" in err_lower or "limit" in err_lower or "window" in err_lower
+            ):
+                return "context_exceeded"
+            if "token" in err_lower and ("exceed" in err_lower or "limit" in err_lower or "maximum" in err_lower):
+                return "context_exceeded"
+
+        if not output or not output.strip():
+            if err_lower:
+                return "provider_error"
+            return "empty_response"
+
+        if err_lower:
+            return "provider_error"
+
+        return "malformed_output"
+
+    def _repair_prompt(
+        self,
+        goal: str,
+        output: str,
+        messages: List[Dict],
+        model_id: str,
+    ) -> Optional[str]:
+        """Build a deterministic repair system prompt. No LLM calls."""
+        if not goal:
+            return None
+
+        goal_requirements = {
+            "code_generation": "syntactically valid code inside a fenced code block (```python ... ```)",
+            "summarization": "at least 3 complete sentences (~50+ characters) covering the key points",
+            "outreach_generation": "a clear subject line on the first non-empty line followed by a body of 50-2000 characters total",
+            "classification": "a single short label or answer under 200 characters",
+        }
+        requirement = goal_requirements.get(
+            goal, "a substantive, non-empty response of at least 20 characters"
+        )
+
+        stripped = (output or "").strip()
+        if not stripped:
+            issue = "the response was empty"
+        elif len(stripped) < 20:
+            issue = f"the response was too short ({len(stripped)} characters)"
+        else:
+            preview = stripped[:80].replace("\n", " ")
+            issue = f"the response did not match the expected structure for goal '{goal}' (saw: {preview!r})"
+
+        return (
+            f"The previous response failed validation for goal: {goal}. "
+            f"Issue: {issue}. "
+            f"Provide a corrected response that is {requirement}. "
+            f"Do not apologize or explain the previous failure — return only the corrected output."
+        )
+
+    def run(
+        self,
+        goal: str,
+        messages: List[Dict],
+        paths: List[Dict],
+        dispatch_fn: Callable[..., Any],
+        pipeline_id: Optional[str] = None,
+        max_retries: int = 2,
+    ) -> Dict[str, Any]:
+        """Run the heal loop across paths until success or exhaustion.
+
+        dispatch_fn signature: dispatch_fn(model_id, messages, system_prompt=None) -> response
+        """
+        models_tried: List[str] = []
+        heal_count = 0
+        last_error: Optional[str] = None
+        last_failure_category: Optional[str] = None
+        last_response: Any = None
+
+        for path in paths:
+            model_id = path["model"] if isinstance(path, dict) else str(path)
+            if not model_id:
+                continue
+            if model_id not in models_tried:
+                models_tried.append(model_id)
+
+            repair_system: Optional[str] = None
+
+            for attempt in range(max_retries + 1):
+                output = ""
+                error_str: Optional[str] = None
+                response = None
+                try:
+                    response = dispatch_fn(model_id, messages, system_prompt=repair_system)
+                    last_response = response
+                    try:
+                        output = response.choices[0].message.content or ""
+                    except (AttributeError, IndexError):
+                        output = ""
+                except Exception as e:
+                    error_str = f"{type(e).__name__}: {e}"
+                    last_error = error_str
+
+                if error_str is None and self._gate1_eval(goal, output):
+                    return {
+                        "success": True,
+                        "result": output,
+                        "model_used": model_id,
+                        "healed": heal_count > 0,
+                        "heal_count": heal_count,
+                        "models_tried": models_tried,
+                        "failure_category": None,
+                        "error": None,
+                        "response": response,
+                    }
+
+                last_failure_category = self._classify_failure(goal, output, error_str)
+
+                if attempt >= max_retries:
+                    break
+
+                # Non-retryable categories on this model — swap immediately.
+                if last_failure_category in ("context_exceeded", "rate_limited"):
+                    break
+
+                repair = self._repair_prompt(goal, output, messages, model_id)
+                if not repair:
+                    break
+                repair_system = repair
+                heal_count += 1
+
+        return {
+            "success": False,
+            "result": None,
+            "model_used": models_tried[-1] if models_tried else None,
+            "healed": heal_count > 0,
+            "heal_count": heal_count,
+            "models_tried": models_tried,
+            "failure_category": last_failure_category,
+            "error": last_error,
+            "response": last_response,
+        }
+
+
 @dataclass
 class TraceHandle:
     """Handle for a manually-started trace. Pass trace.id to router.report()."""
@@ -271,6 +474,7 @@ class Router:
         messages: List[Dict[str, str]],
         force_model: Optional[str] = None,
         pipeline_id: Optional[str] = None,
+        healing: bool = False,
         **kwargs
     ) -> Any:
         """
@@ -357,6 +561,100 @@ class Router:
                 router_span.set_attribute("kalibr.confidence", decision.get("confidence", 0.0))
             else:
                 router_span.set_attribute("kalibr.fallback", True)
+
+            # Heal-loop branch: run full Gate 1 + deterministic prompt repair + model swap.
+            if healing:
+                from kalibr.intelligence import report_outcome
+
+                heal_paths: List[Dict[str, Any]] = []
+                seen_models: set = set()
+                selected_path = {"model": model_id, "tools": tool_id, "params": params}
+                heal_paths.append(selected_path)
+                seen_models.add(model_id)
+                for path in self._paths:
+                    pm = path.get("model")
+                    if pm and pm not in seen_models:
+                        heal_paths.append(path)
+                        seen_models.add(pm)
+
+                def _heal_dispatch(m_id: str, msgs: List[Dict], system_prompt: Optional[str] = None) -> Any:
+                    if system_prompt:
+                        cleaned = [m for m in msgs if m.get("role") != "system"]
+                        effective = [{"role": "system", "content": system_prompt}] + cleaned
+                    else:
+                        effective = msgs
+                    matching = next((p for p in heal_paths if p.get("model") == m_id), None)
+                    candidate_tools = matching.get("tools") if matching else None
+                    candidate_params = (matching.get("params") if matching else None) or {}
+                    return self._dispatch(
+                        m_id,
+                        effective,
+                        candidate_tools,
+                        **{**candidate_params, **kwargs},
+                    )
+
+                heal_loop = _HealLoop()
+                heal_result = heal_loop.run(
+                    goal=self.goal,
+                    messages=messages,
+                    paths=heal_paths,
+                    dispatch_fn=_heal_dispatch,
+                    pipeline_id=pipeline_id,
+                    max_retries=2,
+                )
+
+                router_span.set_attribute("kalibr.healing", True)
+                router_span.set_attribute("kalibr.heal_count", heal_result.get("heal_count", 0))
+                router_span.set_attribute("kalibr.healed", bool(heal_result.get("healed")))
+                router_span.set_attribute(
+                    "kalibr.models_tried", ",".join(heal_result.get("models_tried") or [])
+                )
+
+                used_model = heal_result.get("model_used") or model_id
+                self._last_model_id = used_model
+
+                if heal_result.get("success"):
+                    try:
+                        report_outcome(
+                            trace_id=trace_id,
+                            goal=self.goal,
+                            success=True,
+                            model_id=used_model,
+                            pipeline_id=pipeline_id,
+                        )
+                        self._outcome_reported = True
+                    except Exception:
+                        pass
+
+                    response = heal_result.get("response")
+                    if response is None:
+                        response = _make_chat_completion(heal_result.get("result") or "", model=used_model)
+                    response.kalibr_trace_id = trace_id
+                    response.kalibr_healed = bool(heal_result.get("healed"))
+                    response.kalibr_heal_count = heal_result.get("heal_count", 0)
+                    response.kalibr_models_tried = heal_result.get("models_tried") or []
+                    return response
+
+                # Heal loop exhausted all paths.
+                failure_category = heal_result.get("failure_category") or "unknown"
+                try:
+                    report_outcome(
+                        trace_id=trace_id,
+                        goal=self.goal,
+                        success=False,
+                        failure_reason=heal_result.get("error") or failure_category,
+                        model_id=used_model,
+                        pipeline_id=pipeline_id,
+                    )
+                    self._outcome_reported = True
+                except Exception:
+                    pass
+
+                router_span.set_attribute("error", True)
+                router_span.set_attribute("kalibr.failure_category", failure_category)
+
+                err_msg = heal_result.get("error") or f"heal loop failed: {failure_category}"
+                raise RuntimeError(f"Heal loop exhausted all paths: {err_msg}")
 
             # Step 5: Build ordered candidate paths for fallback
             # First: intelligence-selected path, then remaining registered paths
