@@ -6,8 +6,26 @@ import os
 import logging
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Union
+
+
+@dataclass
+class HealConfig:
+    """Per-call configuration for the self-healing harness.
+
+    Attributes:
+        max_retries: Maximum prompt-repair attempts per model before swapping paths.
+        gate2_enabled: Run the LLM-based quality judge after Gate 1 passes.
+        judge_model: Model id for the Gate 2 judge (uses DeepSeek/OpenAI keys from env).
+        repair_model: Optional override model for repair calls. ``None`` reuses the
+            same model that produced the failing output.
+    """
+
+    max_retries: int = 2
+    gate2_enabled: bool = False
+    judge_model: str = "deepseek-chat"
+    repair_model: Optional[str] = None
 
 from kalibr.provision import resolve_credentials
 from opentelemetry import trace as otel_trace
@@ -28,6 +46,9 @@ def _auto_report_outcome(
     success: bool,
     pipeline_id: Optional[str],
     model_id: Optional[str],
+    score: Optional[float] = None,
+    failure_category: Optional[str] = None,
+    failure_reason: Optional[str] = None,
 ) -> None:
     """Fire-and-forget outcome report. Swallows all errors."""
     try:
@@ -36,6 +57,9 @@ def _auto_report_outcome(
             trace_id=trace_id,
             goal=goal,
             success=success,
+            score=score,
+            failure_category=failure_category,
+            failure_reason=failure_reason,
             pipeline_id=pipeline_id,
             model_id=model_id,
         )
@@ -156,6 +180,81 @@ class _HealLoop:
 
         return "malformed_output"
 
+    def _gate2_judge(
+        self,
+        goal: str,
+        output: str,
+        messages: List[Dict],
+        judge_model: str = "deepseek-chat",
+    ) -> Dict[str, Any]:
+        """Gate 2 LLM-based quality judge.
+
+        Returns {"score": float|None, "issues": [str], "skipped": bool}.
+        Fails open: any error (missing key, timeout, parse failure) returns
+        ``skipped=True`` with no score. Never raises, never blocks the heal loop.
+        """
+        import json as _json
+        import re as _re
+
+        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        if not deepseek_key and not openai_key:
+            return {"score": None, "issues": [], "skipped": True}
+
+        truncated = (output or "")[:500]
+        judge_prompt = (
+            f"You are a quality judge. Goal: {goal}. Output: {truncated}. "
+            "Score 0.0-1.0 and list any issues. "
+            'Respond as JSON: {"score": float, "issues": [str]}'
+        )
+
+        try:
+            from openai import OpenAI
+        except ImportError:
+            return {"score": None, "issues": [], "skipped": True}
+
+        try:
+            if deepseek_key:
+                client = OpenAI(api_key=deepseek_key, base_url="https://api.deepseek.com")
+                model = judge_model if judge_model and judge_model.startswith("deepseek") else "deepseek-chat"
+            else:
+                client = OpenAI(api_key=openai_key)
+                model = "gpt-4o-mini"
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": judge_prompt}],
+                timeout=15.0,
+            )
+            text = (response.choices[0].message.content or "").strip()
+        except Exception:
+            return {"score": None, "issues": [], "skipped": True}
+
+        # Strip code fences if present.
+        fence_match = _re.search(r"```(?:json)?\s*(.*?)```", text, _re.DOTALL)
+        if fence_match:
+            text = fence_match.group(1).strip()
+
+        try:
+            data = _json.loads(text)
+            score = float(data.get("score", 0.5))
+            issues_raw = data.get("issues") or []
+            issues = [str(i) for i in issues_raw if i]
+            return {
+                "score": min(1.0, max(0.0, score)),
+                "issues": issues,
+                "skipped": False,
+            }
+        except (ValueError, TypeError, AttributeError, _json.JSONDecodeError):
+            match = _re.search(r"score\"?\s*[:=]\s*([0-9]*\.?[0-9]+)", text, _re.IGNORECASE)
+            if match:
+                try:
+                    score = min(1.0, max(0.0, float(match.group(1))))
+                    return {"score": score, "issues": [], "skipped": False}
+                except ValueError:
+                    pass
+            return {"score": None, "issues": [], "skipped": True}
+
     def _repair_prompt(
         self,
         goal: str,
@@ -201,6 +300,8 @@ class _HealLoop:
         dispatch_fn: Callable[..., Any],
         pipeline_id: Optional[str] = None,
         max_retries: int = 2,
+        gate2_enabled: bool = False,
+        judge_model: str = "deepseek-chat",
     ) -> Dict[str, Any]:
         """Run the heal loop across paths until success or exhaustion.
 
@@ -237,17 +338,43 @@ class _HealLoop:
                     last_error = error_str
 
                 if error_str is None and self._gate1_eval(goal, output):
-                    return {
-                        "success": True,
-                        "result": output,
-                        "model_used": model_id,
-                        "healed": heal_count > 0,
-                        "heal_count": heal_count,
-                        "models_tried": models_tried,
-                        "failure_category": None,
-                        "error": None,
-                        "response": response,
-                    }
+                    # Gate 2: optional LLM quality judge. Fails open.
+                    gate2_failed = False
+                    gate2_issues: List[str] = []
+                    if gate2_enabled:
+                        judge_result = self._gate2_judge(goal, output, messages, judge_model)
+                        score = judge_result.get("score")
+                        if score is not None and score < 0.5:
+                            gate2_failed = True
+                            gate2_issues = judge_result.get("issues") or []
+
+                    if not gate2_failed:
+                        return {
+                            "success": True,
+                            "result": output,
+                            "model_used": model_id,
+                            "healed": heal_count > 0,
+                            "heal_count": heal_count,
+                            "models_tried": models_tried,
+                            "failure_category": None,
+                            "error": None,
+                            "response": response,
+                        }
+
+                    last_failure_category = "validation_failed"
+                    last_error = "gate2_quality_fail"
+
+                    if attempt >= max_retries:
+                        break
+
+                    repair = self._repair_prompt(goal, output, messages, model_id)
+                    if not repair:
+                        break
+                    if gate2_issues:
+                        repair = f"{repair} Gate 2 judge flagged: {gate2_issues}"
+                    repair_system = repair
+                    heal_count += 1
+                    continue
 
                 last_failure_category = self._classify_failure(goal, output, error_str)
 
@@ -475,6 +602,7 @@ class Router:
         force_model: Optional[str] = None,
         pipeline_id: Optional[str] = None,
         healing: bool = False,
+        heal_config: Optional[HealConfig] = None,
         **kwargs
     ) -> Any:
         """
@@ -486,6 +614,10 @@ class Router:
             pipeline_id: Optional pipeline identifier for multi-pipeline isolation.
                 Passed through to decide() and report_outcome() so traffic from
                 separate pipelines can be measured independently.
+            healing: Run the self-healing loop (Gate 1 + prompt repair + model swap).
+            heal_config: Optional :class:`HealConfig` to override healing behavior
+                (max retries, Gate 2 judge enable, judge model). Only consulted
+                when ``healing=True``. Defaults to ``HealConfig()`` (Gate 2 off).
             **kwargs: Additional args passed to provider
 
         Returns:
@@ -593,6 +725,8 @@ class Router:
                         **{**candidate_params, **kwargs},
                     )
 
+                cfg = heal_config or HealConfig()
+
                 heal_loop = _HealLoop()
                 heal_result = heal_loop.run(
                     goal=self.goal,
@@ -600,7 +734,9 @@ class Router:
                     paths=heal_paths,
                     dispatch_fn=_heal_dispatch,
                     pipeline_id=pipeline_id,
-                    max_retries=2,
+                    max_retries=cfg.max_retries,
+                    gate2_enabled=cfg.gate2_enabled,
+                    judge_model=cfg.judge_model,
                 )
 
                 router_span.set_attribute("kalibr.healing", True)
@@ -614,17 +750,36 @@ class Router:
                 self._last_model_id = used_model
 
                 if heal_result.get("success"):
-                    try:
-                        report_outcome(
-                            trace_id=trace_id,
-                            goal=self.goal,
-                            success=True,
-                            model_id=used_model,
-                            pipeline_id=pipeline_id,
-                        )
+                    heal_count_val = int(heal_result.get("heal_count") or 0)
+                    if heal_count_val > 0:
+                        # Heal telemetry: fire-and-forget signal so the dashboard
+                        # Execution tab surfaces heal events from SDK users.
+                        threading.Thread(
+                            target=_auto_report_outcome,
+                            kwargs={
+                                "trace_id": trace_id,
+                                "goal": self.goal,
+                                "success": True,
+                                "pipeline_id": pipeline_id,
+                                "model_id": used_model,
+                                "score": 0.8,
+                                "failure_category": "healed",
+                            },
+                            daemon=True,
+                        ).start()
                         self._outcome_reported = True
-                    except Exception:
-                        pass
+                    else:
+                        try:
+                            report_outcome(
+                                trace_id=trace_id,
+                                goal=self.goal,
+                                success=True,
+                                model_id=used_model,
+                                pipeline_id=pipeline_id,
+                            )
+                            self._outcome_reported = True
+                        except Exception:
+                            pass
 
                     response = heal_result.get("response")
                     if response is None:
@@ -635,20 +790,24 @@ class Router:
                     response.kalibr_models_tried = heal_result.get("models_tried") or []
                     return response
 
-                # Heal loop exhausted all paths.
+                # Heal loop exhausted all paths — fire failure telemetry.
+                from kalibr.intelligence import FAILURE_CATEGORIES as _FAILURE_CATEGORIES
                 failure_category = heal_result.get("failure_category") or "unknown"
-                try:
-                    report_outcome(
-                        trace_id=trace_id,
-                        goal=self.goal,
-                        success=False,
-                        failure_reason=heal_result.get("error") or failure_category,
-                        model_id=used_model,
-                        pipeline_id=pipeline_id,
-                    )
-                    self._outcome_reported = True
-                except Exception:
-                    pass
+                reported_category = failure_category if failure_category in _FAILURE_CATEGORIES else "unknown"
+                threading.Thread(
+                    target=_auto_report_outcome,
+                    kwargs={
+                        "trace_id": trace_id,
+                        "goal": self.goal,
+                        "success": False,
+                        "pipeline_id": pipeline_id,
+                        "model_id": used_model,
+                        "failure_category": reported_category,
+                        "failure_reason": heal_result.get("error") or failure_category,
+                    },
+                    daemon=True,
+                ).start()
+                self._outcome_reported = True
 
                 router_span.set_attribute("error", True)
                 router_span.set_attribute("kalibr.failure_category", failure_category)
@@ -838,6 +997,101 @@ class Router:
 
     # Alias for common naming confusion
     complete = completion
+
+    def pipeline(
+        self,
+        steps: List[Dict[str, Any]],
+        healing: bool = True,
+        pipeline_id: Optional[str] = None,
+        heal_config: Optional[HealConfig] = None,
+    ) -> Dict[str, Any]:
+        """Run a sequence of LLM steps, each healing independently.
+
+        Args:
+            steps: Ordered list of step dicts. Each step accepts:
+                - ``goal`` (str, optional): override the router's goal for this step.
+                - ``messages`` (list[dict]): OpenAI-format messages.
+                - ``chain`` (bool, optional): when True, prepend the prior step's
+                  output to this step's messages as a user-role context turn.
+            healing: When True (default), each step runs through the heal loop.
+            pipeline_id: Optional pipeline identifier. When omitted, each step
+                gets ``f"pipeline_{i}"`` so the dashboard can isolate traffic.
+            heal_config: Optional :class:`HealConfig` shared across steps.
+
+        Returns:
+            ``{"success": bool, "steps": [...], "total_heals": int,
+            "pipeline_id": str}`` where ``success`` is True only if every step
+            succeeded.
+        """
+        results: List[Dict[str, Any]] = []
+        total_heals = 0
+        all_succeeded = True
+        effective_pipeline_id = pipeline_id or f"pipeline_{uuid.uuid4().hex[:8]}"
+
+        prev_output: Optional[str] = None
+        original_goal = self.goal
+
+        for i, step in enumerate(steps):
+            step_goal = step.get("goal") or original_goal
+            step_messages = list(step.get("messages") or [])
+
+            if step.get("chain") and prev_output:
+                step_messages = [
+                    {
+                        "role": "user",
+                        "content": f"Previous step output:\n{prev_output}",
+                    }
+                ] + step_messages
+
+            step_pipeline_id = pipeline_id or f"pipeline_{i}"
+
+            step_record: Dict[str, Any] = {
+                "step": i,
+                "goal": step_goal,
+                "success": False,
+                "result": None,
+                "healed": False,
+                "heal_count": 0,
+                "model_used": None,
+            }
+
+            self.goal = step_goal
+            try:
+                response = self.completion(
+                    messages=step_messages,
+                    healing=healing,
+                    pipeline_id=step_pipeline_id,
+                    heal_config=heal_config,
+                )
+                output = ""
+                try:
+                    output = response.choices[0].message.content or ""
+                except (AttributeError, IndexError):
+                    output = ""
+                step_record["success"] = True
+                step_record["result"] = output
+                step_record["healed"] = bool(getattr(response, "kalibr_healed", False))
+                step_record["heal_count"] = int(getattr(response, "kalibr_heal_count", 0) or 0)
+                step_record["model_used"] = self._last_model_id
+                total_heals += step_record["heal_count"]
+                prev_output = output
+            except Exception as e:
+                step_record["success"] = False
+                step_record["result"] = f"{type(e).__name__}: {e}"
+                step_record["model_used"] = self._last_model_id
+                all_succeeded = False
+                prev_output = None
+            finally:
+                self.goal = original_goal
+
+            results.append(step_record)
+
+        return {
+            "success": all_succeeded,
+            "steps": results,
+            "total_heals": total_heals,
+            "pipeline_id": effective_pipeline_id,
+        }
 
     def execute(self, task: str, input_data: Any, **kwargs) -> Any:
         """Execute any ML task with intelligent routing.

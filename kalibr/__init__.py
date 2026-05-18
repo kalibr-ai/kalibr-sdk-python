@@ -36,7 +36,7 @@ CLI Usage:
     kalibr version                       # Show version
 """
 
-__version__ = "1.13.1"
+__version__ = "1.14.0"
 
 # Auto-instrument LLM SDKs on import (can be disabled via env var)
 import os
@@ -99,7 +99,7 @@ from .intelligence import (
     get_insights,
     FAILURE_CATEGORIES,
 )
-from .router import Router, TraceHandle
+from .router import HealConfig, Router, TraceHandle
 from .feedback import (
     KalibrFeedback, track_run, user_rejected, user_accepted, get_feedback,
     classify_satisfaction, classify_satisfaction_async, emit_signal,
@@ -191,6 +191,7 @@ __all__ = [
     "update_outcome",
     "get_insights",
     "FAILURE_CATEGORIES",
+    "HealConfig",
     "Router",
     "TraceHandle",
     "KalibrFeedback",

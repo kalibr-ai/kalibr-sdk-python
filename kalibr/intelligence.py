@@ -66,7 +66,8 @@ def _prune_decide_cache() -> None:
 FAILURE_CATEGORIES = [
     "timeout", "context_exceeded", "tool_error", "rate_limited",
     "validation_failed", "hallucination_detected", "user_unsatisfied",
-    "empty_response", "malformed_output", "auth_error", "provider_error", "unknown"
+    "empty_response", "malformed_output", "auth_error", "provider_error",
+    "healed", "unknown"
 ]
 
 
