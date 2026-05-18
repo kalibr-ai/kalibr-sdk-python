@@ -34,6 +34,8 @@ from __future__ import annotations
 
 import os
 import threading
+import time
+import uuid as _uuid
 from typing import Any, Optional
 
 import httpx
@@ -42,6 +44,24 @@ from kalibr.provision import resolve_credentials
 
 # Default intelligence API endpoint
 DEFAULT_INTELLIGENCE_URL = "https://kalibr-intelligence.fly.dev"
+
+# In-process cache for decide() results — keyed by (goal, task_risk_level, tenant_id).
+# Cuts redundant calls when the same goal is routed in tight bursts.
+_decide_cache: dict = {}
+_decide_cache_lock = threading.Lock()
+_DECIDE_CACHE_TTL = 30.0
+_DECIDE_CACHE_MAX_SIZE = 1000
+
+
+def _prune_decide_cache() -> None:
+    """Remove entries older than TTL. Caller must hold _decide_cache_lock."""
+    now = time.time()
+    expired_keys = [
+        key for key, (_, cached_at) in _decide_cache.items()
+        if now - cached_at >= _DECIDE_CACHE_TTL
+    ]
+    for key in expired_keys:
+        del _decide_cache[key]
 
 FAILURE_CATEGORIES = [
     "timeout", "context_exceeded", "tool_error", "rate_limited",
@@ -165,6 +185,7 @@ class KalibrIntelligence:
         tool_id: str | None = None,
         execution_params: dict | None = None,
         model_id: str | None = None,
+        pipeline_id: str | None = None,
     ) -> dict[str, Any]:
         """Report execution outcome for a goal.
 
@@ -215,21 +236,25 @@ class KalibrIntelligence:
                 f"Must be one of: {', '.join(FAILURE_CATEGORIES)}"
             )
 
+        payload: dict[str, Any] = {
+            "trace_id": trace_id,
+            "goal": goal,
+            "success": success,
+            "score": score,
+            "failure_reason": failure_reason,
+            "failure_category": failure_category,
+            "metadata": metadata,
+            "tool_id": tool_id,
+            "execution_params": execution_params,
+            "model_id": model_id,
+        }
+        if pipeline_id is not None:
+            payload["pipeline_id"] = pipeline_id
+
         response = self._request(
             "POST",
             "/api/v1/intelligence/report-outcome",
-            json={
-                "trace_id": trace_id,
-                "goal": goal,
-                "success": success,
-                "score": score,
-                "failure_reason": failure_reason,
-                "failure_category": failure_category,
-                "metadata": metadata,
-                "tool_id": tool_id,
-                "execution_params": execution_params,
-                "model_id": model_id,
-            },
+            json=payload,
         )
         return response.json()
 
@@ -401,6 +426,7 @@ class KalibrIntelligence:
         self,
         goal: str,
         task_risk_level: str = "low",
+        pipeline_id: str | None = None,
     ) -> dict[str, Any]:
         """Get routing decision for a goal.
 
@@ -435,13 +461,17 @@ class KalibrIntelligence:
             model = decision["model_id"]
             print(f"Using {model} ({decision['reason']})")
         """
+        payload: dict[str, Any] = {
+            "goal": goal,
+            "task_risk_level": task_risk_level,
+        }
+        if pipeline_id is not None:
+            payload["pipeline_id"] = pipeline_id
+
         response = self._request(
             "POST",
             "/api/v1/routing/decide",
-            json={
-                "goal": goal,
-                "task_risk_level": task_risk_level,
-            },
+            json=payload,
         )
         return response.json()
 
@@ -687,7 +717,7 @@ def get_policy(goal: str, tenant_id: str | None = None, **kwargs) -> dict[str, A
 
 def report_outcome(
     trace_id: str, goal: str, success: bool, failure_category: str | None = None,
-    tenant_id: str | None = None, **kwargs,
+    tenant_id: str | None = None, pipeline_id: str | None = None, **kwargs,
 ) -> dict[str, Any]:
     """Report execution outcome for a goal.
 
@@ -700,6 +730,7 @@ def report_outcome(
         success: Whether the goal was achieved
         failure_category: Optional structured failure category
         tenant_id: Optional tenant ID override (default: uses KALIBR_TENANT_ID env var)
+        pipeline_id: Optional pipeline identifier for multi-pipeline isolation
         **kwargs: Additional arguments (score, failure_reason, metadata, tool_id, execution_params)
 
     Returns:
@@ -712,8 +743,14 @@ def report_outcome(
     """
     if tenant_id:
         with KalibrIntelligence(tenant_id=tenant_id) as client:
-            return client.report_outcome(trace_id, goal, success, failure_category=failure_category, **kwargs)
-    return _get_intelligence_client().report_outcome(trace_id, goal, success, failure_category=failure_category, **kwargs)
+            return client.report_outcome(
+                trace_id, goal, success,
+                failure_category=failure_category, pipeline_id=pipeline_id, **kwargs,
+            )
+    return _get_intelligence_client().report_outcome(
+        trace_id, goal, success,
+        failure_category=failure_category, pipeline_id=pipeline_id, **kwargs,
+    )
 
 
 def get_recommendation(task_type: str, **kwargs) -> dict[str, Any]:
@@ -769,16 +806,23 @@ def decide(
     goal: str,
     task_risk_level: str = "low",
     tenant_id: str | None = None,
+    pipeline_id: str | None = None,
 ) -> dict[str, Any]:
     """Get routing decision for a goal.
 
     Convenience function that uses the default intelligence client.
     See KalibrIntelligence.decide for full documentation.
 
+    Results are cached in-process for 30 seconds keyed by
+    (goal, task_risk_level, tenant_id). Cache hits return the cached
+    path/model selection with a freshly generated trace_id and
+    ``decision["cached"] = True`` so callers can tell them apart.
+
     Args:
         goal: The goal to route for
         task_risk_level: Risk tolerance - "low", "medium", or "high"
         tenant_id: Optional tenant ID override
+        pipeline_id: Optional pipeline identifier for multi-pipeline isolation
 
     Returns:
         dict with model_id, tool_id, params, reason, confidence, etc.
@@ -789,11 +833,38 @@ def decide(
         decision = decide(goal="book_meeting")
         model = decision["model_id"]
     """
+    # Effective tenant for cache key
     if tenant_id:
-        # Use context manager to ensure client is properly closed
+        effective_tenant = tenant_id
+    else:
+        effective_tenant = _get_intelligence_client().tenant_id
+
+    cache_key = (goal, task_risk_level, effective_tenant)
+
+    with _decide_cache_lock:
+        cached = _decide_cache.get(cache_key)
+        if cached is not None:
+            cached_decision, cached_at = cached
+            if time.time() - cached_at < _DECIDE_CACHE_TTL:
+                result = dict(cached_decision)
+                result["trace_id"] = _uuid.uuid4().hex
+                result["cached"] = True
+                return result
+
+    if tenant_id:
         with KalibrIntelligence(tenant_id=tenant_id) as client:
-            return client.decide(goal, task_risk_level)
-    return _get_intelligence_client().decide(goal, task_risk_level)
+            decision = client.decide(goal, task_risk_level, pipeline_id=pipeline_id)
+    else:
+        decision = _get_intelligence_client().decide(
+            goal, task_risk_level, pipeline_id=pipeline_id,
+        )
+
+    with _decide_cache_lock:
+        _decide_cache[cache_key] = (decision, time.time())
+        if len(_decide_cache) > _DECIDE_CACHE_MAX_SIZE:
+            _prune_decide_cache()
+
+    return decision
 
 
 def update_outcome(trace_id: str, goal: str, tenant_id: str | None = None, **kwargs) -> dict[str, Any]:
