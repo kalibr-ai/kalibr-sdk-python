@@ -4,6 +4,7 @@ Kalibr Router - Intelligent model routing with outcome learning.
 
 import os
 import logging
+import threading
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -14,6 +15,32 @@ from opentelemetry.trace import SpanContext, TraceFlags, NonRecordingSpan, set_s
 from opentelemetry.context import Context
 
 logger = logging.getLogger(__name__)
+
+# Module-level set tracking trace_ids that have been auto-reported in the background,
+# preventing the auto-outcome thread from firing twice for the same trace.
+_auto_reported_traces: set = set()
+_auto_reported_lock = threading.Lock()
+
+
+def _auto_report_outcome(
+    trace_id: str,
+    goal: str,
+    success: bool,
+    pipeline_id: Optional[str],
+    model_id: Optional[str],
+) -> None:
+    """Fire-and-forget outcome report. Swallows all errors."""
+    try:
+        from kalibr.intelligence import report_outcome
+        report_outcome(
+            trace_id=trace_id,
+            goal=goal,
+            success=success,
+            pipeline_id=pipeline_id,
+            model_id=model_id,
+        )
+    except Exception:
+        pass
 
 # Type for paths - either string or dict
 PathSpec = Union[str, Dict[str, Any]]
@@ -243,6 +270,7 @@ class Router:
         self,
         messages: List[Dict[str, str]],
         force_model: Optional[str] = None,
+        pipeline_id: Optional[str] = None,
         **kwargs
     ) -> Any:
         """
@@ -251,6 +279,9 @@ class Router:
         Args:
             messages: OpenAI-format messages
             force_model: Override routing and use this model
+            pipeline_id: Optional pipeline identifier for multi-pipeline isolation.
+                Passed through to decide() and report_outcome() so traffic from
+                separate pipelines can be measured independently.
             **kwargs: Additional args passed to provider
 
         Returns:
@@ -278,7 +309,7 @@ class Router:
             self._last_decision = {"model_id": model_id, "forced": True}
         else:
             try:
-                decision = decide(goal=self.goal)
+                decision = decide(goal=self.goal, pipeline_id=pipeline_id)
                 model_id = decision.get("model_id") or self._paths[0]["model"]
                 tool_id = decision.get("tool_id")
                 params = decision.get("params") or {}
@@ -385,7 +416,7 @@ class Router:
                                         repair_score = self._run_judge(repair_output, repaired_messages)
                                         if repair_score >= self.judge_threshold:
                                             logger.info(f"Prompt repair succeeded (score={repair_score:.2f})")
-                                            self.report(success=True, score=repair_score)
+                                            self.report(success=True, score=repair_score, pipeline_id=pipeline_id)
                                             self._outcome_reported = True
                                             response = repair_response
                                             # Skip to return — fall through to response return below
@@ -398,6 +429,7 @@ class Router:
                                                     success=False,
                                                     failure_reason="quality_fail_after_repair",
                                                     model_id=candidate_model,
+                                                    pipeline_id=pipeline_id,
                                                 )
                                             except Exception:
                                                 pass
@@ -411,6 +443,7 @@ class Router:
                                                 success=False,
                                                 failure_reason="quality_fail",
                                                 model_id=candidate_model,
+                                                pipeline_id=pipeline_id,
                                             )
                                         except Exception:
                                             pass
@@ -423,12 +456,13 @@ class Router:
                                             success=False,
                                             failure_reason="quality_fail",
                                             model_id=candidate_model,
+                                            pipeline_id=pipeline_id,
                                         )
                                     except Exception:
                                         pass
                                     continue
                             else:
-                                self.report(success=True, score=judge_score)
+                                self.report(success=True, score=judge_score, pipeline_id=pipeline_id)
                                 self._outcome_reported = True
                         except Exception as e:
                             logger.warning(f"Gate 2 judge failed (non-blocking): {e}")
@@ -442,17 +476,31 @@ class Router:
                                 # Priority 1: User-provided continuous scorer
                                 score = self.score_when(output)
                                 score = min(1.0, max(0.0, float(score)))
-                                self.report(success=score >= 0.5, score=score)
+                                self.report(success=score >= 0.5, score=score, pipeline_id=pipeline_id)
                             elif self.success_when:
                                 # Priority 2: User-provided binary scorer
                                 success = self.success_when(output)
-                                self.report(success=success)
+                                self.report(success=success, pipeline_id=pipeline_id)
                             else:
                                 # Priority 3: Default heuristic scoring (zero-config)
                                 score = self._default_score(response)
-                                self.report(success=score >= 0.5, score=score)
+                                self.report(success=score >= 0.5, score=score, pipeline_id=pipeline_id)
                         except Exception as e:
                             logger.warning(f"Auto-outcome evaluation failed: {e}")
+
+                    # Fire-and-forget baseline outcome report so every successful dispatch
+                    # produces at least one signal — never blocks, never raises.
+                    should_auto_fire = False
+                    with _auto_reported_lock:
+                        if trace_id not in _auto_reported_traces:
+                            _auto_reported_traces.add(trace_id)
+                            should_auto_fire = True
+                    if should_auto_fire:
+                        threading.Thread(
+                            target=_auto_report_outcome,
+                            args=(trace_id, self.goal, True, pipeline_id, candidate_model),
+                            daemon=True,
+                        ).start()
 
                     # Add trace_id to response for explicit linkage
                     response.kalibr_trace_id = trace_id
@@ -472,6 +520,7 @@ class Router:
                             success=False,
                             failure_reason=f"provider_error: {type(e).__name__}",
                             model_id=candidate_model,
+                            pipeline_id=pipeline_id,
                         )
                     except Exception:
                         pass
@@ -795,6 +844,7 @@ class Router:
         score: Optional[float] = None,
         trace_id: Optional[str] = None,
         failure_category: Optional[str] = None,
+        pipeline_id: Optional[str] = None,
     ):
         """
         Report outcome for the last completion.
@@ -809,6 +859,7 @@ class Router:
             score: Optional quality score (0.0-1.0)
             trace_id: Optional explicit trace ID (uses last completion's trace_id if not provided)
             failure_category: Optional structured failure category for clustering
+            pipeline_id: Optional pipeline identifier for multi-pipeline isolation
         """
         if self._outcome_reported:
             logger.warning("Outcome already reported for this completion. Each completion() requires a separate report() call.")
@@ -837,6 +888,7 @@ class Router:
                 failure_reason=reason,
                 failure_category=failure_category,
                 model_id=self._last_model_id,
+                pipeline_id=pipeline_id,
             )
             self._outcome_reported = True
         except Exception as e:
