@@ -20,12 +20,16 @@ class HealConfig:
         judge_model: Model id for the Gate 2 judge (uses DeepSeek/OpenAI keys from env).
         repair_model: Optional override model for repair calls. ``None`` reuses the
             same model that produced the failing output.
+        meta_prompt_enabled: When True, generate a task-specific system prompt via
+            a cheap LLM before each heal step. Combined with repair prompts on retry.
+            Fails open (never blocks or raises).
     """
 
     max_retries: int = 2
     gate2_enabled: bool = False
     judge_model: str = "deepseek-chat"
     repair_model: Optional[str] = None
+    meta_prompt_enabled: bool = False
 
 from kalibr.provision import resolve_credentials
 from opentelemetry import trace as otel_trace
@@ -38,6 +42,11 @@ logger = logging.getLogger(__name__)
 # preventing the auto-outcome thread from firing twice for the same trace.
 _auto_reported_traces: set = set()
 _auto_reported_lock = threading.Lock()
+
+# Module-level cache for generated meta-prompts. Key: hash of goal + user preview.
+# Value: (generated_prompt, timestamp). TTL enforced at read time.
+_meta_prompt_cache: Dict[str, tuple] = {}
+_META_PROMPT_TTL_SECONDS = 300.0
 
 
 def _auto_report_outcome(
@@ -255,6 +264,87 @@ class _HealLoop:
                     pass
             return {"score": None, "issues": [], "skipped": True}
 
+    async def _generate_meta_prompt(
+        self,
+        goal: str,
+        messages: list,
+        model_id: str,
+    ) -> Optional[str]:
+        """Generate a task-specific system prompt via a cheap LLM. Never raises.
+
+        Returns None on any error (missing key, parse failure, network error).
+        Results cached for 5 minutes keyed on goal + first 100 chars of last user
+        message, so repeated identical requests reuse the same prompt.
+        """
+        import asyncio as _asyncio
+        import hashlib as _hashlib
+        import time as _time
+
+        try:
+            user_preview = ""
+            if messages:
+                last = messages[-1]
+                if isinstance(last, dict) and last.get("role") == "user":
+                    user_preview = str(last.get("content") or "")
+                else:
+                    for m in reversed(messages):
+                        if isinstance(m, dict) and m.get("role") == "user":
+                            user_preview = str(m.get("content") or "")
+                            break
+
+            cache_key_raw = f"{goal}|{user_preview[:100]}"
+            cache_key = _hashlib.sha256(cache_key_raw.encode("utf-8")).hexdigest()
+
+            now = _time.time()
+            cached = _meta_prompt_cache.get(cache_key)
+            if cached is not None:
+                prompt, ts = cached
+                if now - ts < _META_PROMPT_TTL_SECONDS:
+                    return prompt
+
+            deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+            openai_key = os.environ.get("OPENAI_API_KEY")
+            if not deepseek_key and not openai_key:
+                return None
+
+            try:
+                from openai import OpenAI
+            except ImportError:
+                return None
+
+            meta_prompt = (
+                "Generate a concise system prompt (under 150 words) for an AI completing this task.\n"
+                f"Goal type: {goal}\n"
+                f"Task preview: {user_preview[:300]}\n"
+                "Output ONLY the system prompt text."
+            )
+
+            def _do_call() -> Optional[str]:
+                try:
+                    if deepseek_key:
+                        client = OpenAI(api_key=deepseek_key, base_url="https://api.deepseek.com")
+                        model = "deepseek-chat"
+                    else:
+                        client = OpenAI(api_key=openai_key)
+                        model = "gpt-4o-mini"
+                    response = client.chat.completions.create(
+                        model=model,
+                        messages=[{"role": "user", "content": meta_prompt}],
+                        timeout=15.0,
+                    )
+                    return (response.choices[0].message.content or "").strip()
+                except Exception:
+                    return None
+
+            generated = await _asyncio.to_thread(_do_call)
+            if not generated:
+                return None
+
+            _meta_prompt_cache[cache_key] = (generated, now)
+            return generated
+        except Exception:
+            return None
+
     def _repair_prompt(
         self,
         goal: str,
@@ -302,6 +392,7 @@ class _HealLoop:
         max_retries: int = 2,
         gate2_enabled: bool = False,
         judge_model: str = "deepseek-chat",
+        meta_prompt_enabled: bool = False,
     ) -> Dict[str, Any]:
         """Run the heal loop across paths until success or exhaustion.
 
@@ -313,6 +404,20 @@ class _HealLoop:
         last_failure_category: Optional[str] = None
         last_response: Any = None
 
+        meta_sys_prompt: Optional[str] = None
+        if meta_prompt_enabled:
+            import asyncio as _asyncio
+            first_model = ""
+            if paths:
+                first_path = paths[0]
+                first_model = first_path["model"] if isinstance(first_path, dict) else str(first_path)
+            try:
+                meta_sys_prompt = _asyncio.run(
+                    self._generate_meta_prompt(goal, messages, first_model)
+                )
+            except Exception:
+                meta_sys_prompt = None
+
         for path in paths:
             model_id = path["model"] if isinstance(path, dict) else str(path)
             if not model_id:
@@ -320,7 +425,7 @@ class _HealLoop:
             if model_id not in models_tried:
                 models_tried.append(model_id)
 
-            repair_system: Optional[str] = None
+            repair_system: Optional[str] = meta_sys_prompt
 
             for attempt in range(max_retries + 1):
                 output = ""
@@ -372,7 +477,7 @@ class _HealLoop:
                         break
                     if gate2_issues:
                         repair = f"{repair} Gate 2 judge flagged: {gate2_issues}"
-                    repair_system = repair
+                    repair_system = f"{meta_sys_prompt}\n\n{repair}" if meta_sys_prompt else repair
                     heal_count += 1
                     continue
 
@@ -388,7 +493,7 @@ class _HealLoop:
                 repair = self._repair_prompt(goal, output, messages, model_id)
                 if not repair:
                     break
-                repair_system = repair
+                repair_system = f"{meta_sys_prompt}\n\n{repair}" if meta_sys_prompt else repair
                 heal_count += 1
 
         return {
@@ -737,6 +842,7 @@ class Router:
                     max_retries=cfg.max_retries,
                     gate2_enabled=cfg.gate2_enabled,
                     judge_model=cfg.judge_model,
+                    meta_prompt_enabled=cfg.meta_prompt_enabled,
                 )
 
                 router_span.set_attribute("kalibr.healing", True)
