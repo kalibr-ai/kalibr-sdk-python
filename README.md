@@ -66,7 +66,7 @@ response = router.completion(
 
 If you're using Claude Code, Cursor, Windsurf, or any coding agent to build with Kalibr, add the appropriate context file to your project so the agent generates Router-based code by default.
 
-**Claude Code / Codex / OpenClaw:**
+**Claude Code / Codex:**
 Copy [templates/CLAUDE.md](templates/CLAUDE.md) to your project root as `CLAUDE.md`
 
 **Cursor / Windsurf:**
@@ -76,41 +76,6 @@ Once added, your coding agent will automatically:
 - Use `Router` instead of raw LLM clients
 - Always put `import kalibr` first
 - Include outcome reporting in every agent it builds
-
-## OpenClaw / Hermes Agent Setup
-
-If you're running an [OpenClaw](https://openclaw.ai) or Hermes orchestrator agent, use the `--openclaw` flag to get a **fully autonomous onboarding prompt** — zero human steps required after pasting it in.
-
-```bash
-kalibr prompt --openclaw
-```
-
-This outputs (and copies to your clipboard) a complete setup sequence that instructs the agent to:
-
-1. `pip install kalibr huggingface_hub`
-2. Run `kalibr auth --agent --email <your-email>` — headless account provisioning, no browser required
-3. Source credentials into `~/.zshrc` or `~/.bashrc`
-4. `openclaw plugin install kalibr && openclaw plugin configure kalibr`
-5. Scaffold `~/clawd/` workspace: `SOUL.md`, `USER.md`, `HEARTBEAT.md`, `AGENTS.md` with routing table
-6. Create `~/clawd/kalibr-integration/` — downloads `kalibr_pipeline.py`, `kalibr_taxonomy.py`, `kalibr_eval.py` from this repo's `examples/`
-7. `kalibr init && kalibr verify`
-8. Smoke-test `classify_and_route()`
-9. Report done with dashboard link, claim URL, and optional provider key prompts
-
-**Usage:**
-
-```bash
-# Standard prompt (Claude Code / Cursor integration)
-kalibr prompt
-
-# Website-driven (email pre-filled, zero human steps):
-kalibr prompt --openclaw --email user@example.com
-
-# Manual (user fills in email themselves):
-kalibr prompt --openclaw
-```
-
-Once set up, your OpenClaw agent will automatically call `classify_and_route()` per task, route to the cheapest model that succeeds, and report outcomes back to Kalibr — all without manual intervention.
 
 ## Agent Starter Template
 
@@ -535,21 +500,6 @@ if model.startswith("gpt"):
     response = client.chat.completions.create(model=model, messages=[...])
 
 report_outcome(trace_id=trace_id, goal="summarize", success=True)
-```
-
-Or go even lower:
-
-```python
-from kalibr import register_path, decide, report_outcome
-
-register_path(goal="book_meeting", model_id="gpt-4o")
-register_path(goal="book_meeting", model_id="claude-sonnet-4-20250514")
-
-decision = decide(goal="book_meeting")
-model = decision["model_id"]
-
-# Make your own LLM call, then report
-report_outcome(trace_id="...", goal="book_meeting", success=True)
 ```
 
 ## Configuration

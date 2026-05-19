@@ -144,7 +144,6 @@ Why: The monkey-patch modifies the SDK class, not an instance. Creating a separa
 ### Known agent entry points
 
 - Hermes Agent: `run_agent.py` — add `import kalibr` above `from openai import OpenAI` (near line 34)
-- OpenClaw: main gateway entry point — add `import kalibr` above OpenAI/Anthropic imports
 - LangChain apps: wherever ChatOpenAI or ChatAnthropic is instantiated
 - CrewAI apps: wherever the crew is defined
 - HuggingFace apps: wherever InferenceClient is instantiated
@@ -439,7 +438,7 @@ router = Router(
 - NOT a model router — LiteLLM, OpenRouter select by cost/latency. Kalibr routes model + tool + parameter paths by task outcome success.
 - NOT a gateway — your LLM calls go directly to the provider. Kalibr instruments and learns.
 - NOT a prompt optimizer — Kalibr never reads or modifies prompt content.
-- NOT an agent framework — use LangChain, CrewAI, Hermes, OpenClaw on top. Kalibr is infrastructure underneath.
+- NOT an agent framework — use LangChain, CrewAI, Hermes on top. Kalibr is infrastructure underneath.
 
 ## Links
 
