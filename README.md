@@ -241,6 +241,86 @@ Every model call runs through a self-contained healing loop — no orchestrator 
 
 Your original messages are never modified. All LLM calls for meta prompt generation and repair run on your API keys — zero Kalibr inference cost.
 
+### Enable the heal loop
+
+```python
+from kalibr import Router
+
+router = Router(goal="summarization", paths=["gpt-4o-mini", "deepseek-chat"])
+
+response = router.completion(
+    messages=[{"role": "user", "content": "Summarize this article..."}],
+    healing=True,  # Gate 1 eval + prompt repair + model swap on failure
+)
+
+print(response.kalibr_healed)      # True if healing fired
+print(response.kalibr_heal_count)  # Number of repair attempts
+```
+
+### Tuning the heal loop with `HealConfig`
+
+```python
+from kalibr import Router, HealConfig
+
+config = HealConfig(
+    max_retries=2,             # Repair attempts before model swap
+    gate2_enabled=True,        # LLM quality judge (uses DEEPSEEK_API_KEY)
+    meta_prompt_enabled=True,  # Generate task-specific system prompt
+    judge_model="deepseek-chat",
+)
+
+router = Router(goal="summarization", paths=["gpt-4o-mini", "deepseek-chat"])
+response = router.completion(
+    messages=[{"role": "user", "content": "Summarize this article..."}],
+    healing=True,
+    heal_config=config,
+)
+```
+
+## Multi-step pipelines
+
+`router.pipeline()` runs a sequence of goals end-to-end, with healing applied at each step and outputs chained between steps:
+
+```python
+from kalibr import Router
+
+router = Router(goal="research", paths=["gpt-4o", "deepseek-chat"])
+
+result = router.pipeline(
+    [
+        {
+            "goal": "research",
+            "messages": [{"role": "user", "content": "Research this topic..."}],
+        },
+        {
+            "goal": "outreach_generation",
+            "messages": [{"role": "user", "content": "Write email"}],
+            "chain": True,  # Feed previous step's output into this step
+        },
+    ],
+    healing=True,
+    pipeline_id="my-pipeline",
+)
+
+print(result["success"])      # True if all steps succeeded
+print(result["total_heals"])  # Total heals across all steps
+for step in result["steps"]:
+    print(step["goal"], step["healed"], step["model_used"])
+```
+
+## Pipeline isolation with `pipeline_id`
+
+Pass a `pipeline_id` to keep routing outcomes from bleeding between unrelated agents that share the same goal:
+
+```python
+response = router.completion(
+    messages=[...],
+    pipeline_id="invoice-processing",  # Isolate routing for this pipeline
+)
+```
+
+Two agents using the same `goal` but different `pipeline_id`s maintain independent bandit state, so a bad run in one pipeline won't shift traffic in the other.
+
 ## Paths
 
 A path is any combination of model + tools + params. Kalibr tracks each combination separately and learns which one works best for each goal.
@@ -503,11 +583,11 @@ pytest
 
 ## Current Version / Status
 
-- **PyPI version:** `1.12.1` — [pypi.org/project/kalibr](https://pypi.org/project/kalibr/)
+- **PyPI version:** `1.14.1` — [pypi.org/project/kalibr](https://pypi.org/project/kalibr/)
 - **Python:** 3.10, 3.11, 3.12
 - **Status:** Production. Used in live agent pipelines.
-- **Latest changes (unreleased):** Tavily search provider, Nebius AI Studio support
-- **TS SDK counterpart:** `@kalibr/sdk` v1.12.1 — see [kalibr-sdk-ts](https://github.com/kalibr-ai/kalibr-sdk-ts)
+- **Latest changes (1.14.x):** Full heal loop (`healing=True`), `HealConfig` tuning, `router.pipeline()` multi-step execution, `pipeline_id` isolation, Gate 2 LLM judge, LLM meta-prompt generation
+- **TS SDK counterpart:** `@kalibr/sdk` v1.14.1 — see [kalibr-sdk-ts](https://github.com/kalibr-ai/kalibr-sdk-ts)
 
 ## Contributing
 
