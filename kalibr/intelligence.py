@@ -677,7 +677,7 @@ _client_lock = threading.Lock()
 
 def _get_intelligence_client() -> KalibrIntelligence:
     """Get or create the singleton intelligence client.
-    
+
     Thread-safe singleton pattern using double-checked locking.
     """
     global _intelligence_client
@@ -686,6 +686,11 @@ def _get_intelligence_client() -> KalibrIntelligence:
             # Double-check inside lock to prevent race condition
             if _intelligence_client is None:
                 _intelligence_client = KalibrIntelligence()
+    # Re-resolve if tenant_id is empty (env var may have been set after construction)
+    if not _intelligence_client.tenant_id:
+        _, tenant_id = resolve_credentials()
+        if tenant_id:
+            _intelligence_client.tenant_id = tenant_id
     return _intelligence_client
 
 

@@ -894,6 +894,7 @@ class Router:
                     response.kalibr_healed = bool(heal_result.get("healed"))
                     response.kalibr_heal_count = heal_result.get("heal_count", 0)
                     response.kalibr_models_tried = heal_result.get("models_tried") or []
+                    response.kalibr_model_used = used_model
                     return response
 
                 # Heal loop exhausted all paths — fire failure telemetry.
@@ -1071,6 +1072,7 @@ class Router:
 
                     # Add trace_id to response for explicit linkage
                     response.kalibr_trace_id = trace_id
+                    response.kalibr_model_used = candidate_model
                     return response
 
                 except Exception as e:
