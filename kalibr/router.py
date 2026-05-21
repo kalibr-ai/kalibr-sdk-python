@@ -750,7 +750,12 @@ class Router:
             self._last_decision = {"model_id": model_id, "forced": True}
         else:
             try:
-                decision = decide(goal=self.goal, pipeline_id=pipeline_id)
+                candidate_models = [p["model"] for p in self._paths if p.get("model")]
+                decision = decide(
+                    goal=self.goal,
+                    pipeline_id=pipeline_id,
+                    candidate_model_ids=candidate_models,
+                )
                 model_id = decision.get("model_id") or self._paths[0]["model"]
                 tool_id = decision.get("tool_id")
                 params = decision.get("params") or {}
