@@ -36,7 +36,7 @@ import os
 import threading
 import time
 import uuid as _uuid
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import httpx
 
@@ -428,6 +428,7 @@ class KalibrIntelligence:
         goal: str,
         task_risk_level: str = "low",
         pipeline_id: str | None = None,
+        candidate_model_ids: Optional[List[str]] = None,
     ) -> dict[str, Any]:
         """Get routing decision for a goal.
 
@@ -468,6 +469,8 @@ class KalibrIntelligence:
         }
         if pipeline_id is not None:
             payload["pipeline_id"] = pipeline_id
+        if candidate_model_ids is not None:
+            payload["candidate_model_ids"] = candidate_model_ids
 
         response = self._request(
             "POST",
@@ -813,6 +816,7 @@ def decide(
     task_risk_level: str = "low",
     tenant_id: str | None = None,
     pipeline_id: str | None = None,
+    candidate_model_ids: Optional[List[str]] = None,
 ) -> dict[str, Any]:
     """Get routing decision for a goal.
 
@@ -845,7 +849,12 @@ def decide(
     else:
         effective_tenant = _get_intelligence_client().tenant_id
 
-    cache_key = (goal, task_risk_level, effective_tenant)
+    cache_key = (
+        goal,
+        task_risk_level,
+        effective_tenant,
+        tuple(candidate_model_ids) if candidate_model_ids is not None else None,
+    )
 
     with _decide_cache_lock:
         cached = _decide_cache.get(cache_key)
@@ -859,10 +868,16 @@ def decide(
 
     if tenant_id:
         with KalibrIntelligence(tenant_id=tenant_id) as client:
-            decision = client.decide(goal, task_risk_level, pipeline_id=pipeline_id)
+            decision = client.decide(
+                goal, task_risk_level,
+                pipeline_id=pipeline_id,
+                candidate_model_ids=candidate_model_ids,
+            )
     else:
         decision = _get_intelligence_client().decide(
-            goal, task_risk_level, pipeline_id=pipeline_id,
+            goal, task_risk_level,
+            pipeline_id=pipeline_id,
+            candidate_model_ids=candidate_model_ids,
         )
 
     with _decide_cache_lock:
