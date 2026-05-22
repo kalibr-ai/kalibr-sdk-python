@@ -925,7 +925,22 @@ class Router:
                 router_span.set_attribute("kalibr.failure_category", failure_category)
 
                 err_msg = heal_result.get("error") or f"heal loop failed: {failure_category}"
-                raise RuntimeError(f"Heal loop exhausted all paths: {err_msg}")
+
+                # Return the best attempt instead of raising — a partial response is
+                # better than an exception for benchmarks and callers that can tolerate
+                # lower-quality output. Raise only if no response was ever received
+                # (e.g. network failure before any bytes arrived).
+                best_response = heal_result.get("response")
+                if best_response is None:
+                    raise RuntimeError(f"Heal loop exhausted all paths: {err_msg}")
+
+                best_response.kalibr_trace_id = trace_id
+                best_response.kalibr_healed = True
+                best_response.kalibr_heal_exhausted = True
+                best_response.kalibr_heal_count = heal_result.get("heal_count", 0)
+                best_response.kalibr_models_tried = heal_result.get("models_tried") or []
+                best_response.kalibr_model_used = used_model
+                return best_response
 
             # Step 5: Build ordered candidate paths for fallback
             # First: intelligence-selected path, then remaining registered paths
