@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.4] - 2026-05-22
+
+### Fixed
+
+- **fix: heal loop returns best attempt instead of raising on exhaustion** — When all heal-loop paths are exhausted, the router now returns the last attempted response (with `kalibr_heal_exhausted = True`) instead of raising `RuntimeError`. Only raises if no response was ever received (e.g. network failure before any bytes arrived). Prevents benchmarks and callers from counting partial results as hard errors.
+
 ### Added
 
 - **Tavily Search provider** — `tavily/basic` and `tavily/advanced` as Router paths. Returns web search results wrapped in an OpenAI-compatible ChatCompletion shim so Thompson Sampling can compete Tavily against LLMs on web research goals. Set `TAVILY_API_KEY` env var.
