@@ -598,6 +598,7 @@ class Router:
         repair_prompt: bool = False,
         exploration_rate: Optional[float] = None,
         auto_register: bool = True,
+        session_id: Optional[str] = None,
     ):
         """
         Initialize router.
@@ -633,6 +634,11 @@ class Router:
                            score_when=lambda out: min(1.0, len(out) / 500)
             exploration_rate: Override exploration rate (0.0-1.0)
             auto_register: If True, register paths on init
+            session_id: Optional session identifier for session-aware routing.
+                When provided, the intelligence service reads recent session
+                momentum and may escalate the model choice if the session is
+                widening (user frustrated/failing). Falls back to the
+                KALIBR_SESSION_ID environment variable when not passed.
         """
         self.goal = goal
 
@@ -657,6 +663,7 @@ class Router:
         self.judge_threshold = judge_threshold
         self.repair_prompt = repair_prompt
         self.exploration_rate = exploration_rate
+        self.session_id = session_id or os.environ.get("KALIBR_SESSION_ID") or None
         self._last_trace_id: Optional[str] = None
         self._last_model_id: Optional[str] = None
         self._last_decision: Optional[dict] = None
@@ -755,11 +762,16 @@ class Router:
                     goal=self.goal,
                     pipeline_id=pipeline_id,
                     candidate_model_ids=candidate_models,
+                    session_id=self.session_id,
                 )
                 model_id = decision.get("model_id") or self._paths[0]["model"]
                 tool_id = decision.get("tool_id")
                 params = decision.get("params") or {}
                 self._last_decision = decision
+                if decision.get("session_escalated"):
+                    logger.debug(
+                        f"Session routing escalated model to {model_id} due to widening session momentum"
+                    )
             except Exception as e:
                 logger.warning(f"Routing failed, using fallback: {e}")
                 model_id = self._paths[0]["model"]

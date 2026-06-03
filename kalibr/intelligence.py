@@ -429,6 +429,7 @@ class KalibrIntelligence:
         task_risk_level: str = "low",
         pipeline_id: str | None = None,
         candidate_model_ids: Optional[List[str]] = None,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Get routing decision for a goal.
 
@@ -471,6 +472,8 @@ class KalibrIntelligence:
             payload["pipeline_id"] = pipeline_id
         if candidate_model_ids is not None:
             payload["candidate_model_ids"] = candidate_model_ids
+        if session_id is not None:
+            payload["session_id"] = session_id
 
         response = self._request(
             "POST",
@@ -817,6 +820,7 @@ def decide(
     tenant_id: str | None = None,
     pipeline_id: str | None = None,
     candidate_model_ids: Optional[List[str]] = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Get routing decision for a goal.
 
@@ -849,6 +853,10 @@ def decide(
     else:
         effective_tenant = _get_intelligence_client().tenant_id
 
+    # Bypass cache when session_id is provided — session momentum changes
+    # over time and a cached decision would skip the escalation check.
+    use_cache = session_id is None
+
     cache_key = (
         goal,
         task_risk_level,
@@ -856,15 +864,16 @@ def decide(
         tuple(candidate_model_ids) if candidate_model_ids is not None else None,
     )
 
-    with _decide_cache_lock:
-        cached = _decide_cache.get(cache_key)
-        if cached is not None:
-            cached_decision, cached_at = cached
-            if time.time() - cached_at < _DECIDE_CACHE_TTL:
-                result = dict(cached_decision)
-                result["trace_id"] = _uuid.uuid4().hex
-                result["cached"] = True
-                return result
+    if use_cache:
+        with _decide_cache_lock:
+            cached = _decide_cache.get(cache_key)
+            if cached is not None:
+                cached_decision, cached_at = cached
+                if time.time() - cached_at < _DECIDE_CACHE_TTL:
+                    result = dict(cached_decision)
+                    result["trace_id"] = _uuid.uuid4().hex
+                    result["cached"] = True
+                    return result
 
     if tenant_id:
         with KalibrIntelligence(tenant_id=tenant_id) as client:
@@ -872,18 +881,21 @@ def decide(
                 goal, task_risk_level,
                 pipeline_id=pipeline_id,
                 candidate_model_ids=candidate_model_ids,
+                session_id=session_id,
             )
     else:
         decision = _get_intelligence_client().decide(
             goal, task_risk_level,
             pipeline_id=pipeline_id,
             candidate_model_ids=candidate_model_ids,
+            session_id=session_id,
         )
 
-    with _decide_cache_lock:
-        _decide_cache[cache_key] = (decision, time.time())
-        if len(_decide_cache) > _DECIDE_CACHE_MAX_SIZE:
-            _prune_decide_cache()
+    if use_cache:
+        with _decide_cache_lock:
+            _decide_cache[cache_key] = (decision, time.time())
+            if len(_decide_cache) > _DECIDE_CACHE_MAX_SIZE:
+                _prune_decide_cache()
 
     return decision
 
