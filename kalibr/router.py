@@ -58,6 +58,8 @@ def _auto_report_outcome(
     score: Optional[float] = None,
     failure_category: Optional[str] = None,
     failure_reason: Optional[str] = None,
+    cache_hit: Optional[bool] = None,
+    cache_tokens: int = 0,
 ) -> None:
     """Fire-and-forget outcome report. Swallows all errors."""
     try:
@@ -71,9 +73,45 @@ def _auto_report_outcome(
             failure_reason=failure_reason,
             pipeline_id=pipeline_id,
             model_id=model_id,
+            cache_hit=cache_hit,
+            cache_tokens=cache_tokens,
         )
     except Exception:
         pass
+
+
+def _extract_cache_info(response: Any) -> tuple[Optional[bool], int]:
+    """Extract prompt-cache hit info from a provider response.
+
+    Returns ``(cache_hit, cache_tokens)``. ``cache_hit`` is ``None`` when the
+    provider did not surface any cache field (so callers can distinguish
+    "unknown" from a confirmed miss). ``cache_tokens`` is the number of tokens
+    served from cache (0 on miss or unknown).
+
+    Supports Anthropic's ``usage.cache_read_input_tokens`` and OpenAI's
+    ``usage.prompt_tokens_details.cached_tokens``. Fails open: any exception
+    returns ``(None, 0)``.
+    """
+    try:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None, 0
+
+        anthropic_cache = getattr(usage, "cache_read_input_tokens", None)
+        if anthropic_cache is not None:
+            tokens = int(anthropic_cache or 0)
+            return tokens > 0, tokens
+
+        details = getattr(usage, "prompt_tokens_details", None)
+        if details is not None:
+            openai_cache = getattr(details, "cached_tokens", None)
+            if openai_cache is not None:
+                tokens = int(openai_cache or 0)
+                return tokens > 0, tokens
+
+        return None, 0
+    except Exception:
+        return None, 0
 
 # Type for paths - either string or dict
 PathSpec = Union[str, Dict[str, Any]]
@@ -599,6 +637,7 @@ class Router:
         exploration_rate: Optional[float] = None,
         auto_register: bool = True,
         session_id: Optional[str] = None,
+        prefer_cached: bool = False,
     ):
         """
         Initialize router.
@@ -639,6 +678,12 @@ class Router:
                 momentum and may escalate the model choice if the session is
                 widening (user frustrated/failing). Falls back to the
                 KALIBR_SESSION_ID environment variable when not passed.
+            prefer_cached: When True, future routing decisions will prefer
+                providers/paths that the intelligence service reports as having
+                warm prompt caches for this goal. Wired in for forward
+                compatibility; the intelligence service does not yet return
+                cache-affinity data, so today the flag is captured on the
+                Router and reported in outcomes but does not yet bias routing.
         """
         self.goal = goal
 
@@ -664,6 +709,7 @@ class Router:
         self.repair_prompt = repair_prompt
         self.exploration_rate = exploration_rate
         self.session_id = session_id or os.environ.get("KALIBR_SESSION_ID") or None
+        self.prefer_cached = prefer_cached
         self._last_trace_id: Optional[str] = None
         self._last_model_id: Optional[str] = None
         self._last_decision: Optional[dict] = None
@@ -873,6 +919,8 @@ class Router:
                 self._last_model_id = used_model
 
                 if heal_result.get("success"):
+                    heal_response = heal_result.get("response")
+                    heal_cache_hit, heal_cache_tokens = _extract_cache_info(heal_response)
                     heal_count_val = int(heal_result.get("heal_count") or 0)
                     if heal_count_val > 0:
                         # Heal telemetry: fire-and-forget signal so the dashboard
@@ -887,6 +935,8 @@ class Router:
                                 "model_id": used_model,
                                 "score": 0.8,
                                 "failure_category": "healed",
+                                "cache_hit": heal_cache_hit,
+                                "cache_tokens": heal_cache_tokens,
                             },
                             daemon=True,
                         ).start()
@@ -899,12 +949,14 @@ class Router:
                                 success=True,
                                 model_id=used_model,
                                 pipeline_id=pipeline_id,
+                                cache_hit=heal_cache_hit,
+                                cache_tokens=heal_cache_tokens,
                             )
                             self._outcome_reported = True
                         except Exception:
                             pass
 
-                    response = heal_result.get("response")
+                    response = heal_response
                     if response is None:
                         response = _make_chat_completion(heal_result.get("result") or "", model=used_model)
                     response.kalibr_trace_id = trace_id
@@ -912,6 +964,8 @@ class Router:
                     response.kalibr_heal_count = heal_result.get("heal_count", 0)
                     response.kalibr_models_tried = heal_result.get("models_tried") or []
                     response.kalibr_model_used = used_model
+                    response.kalibr_cache_hit = heal_cache_hit
+                    response.kalibr_cache_tokens = heal_cache_tokens
                     return response
 
                 # Heal loop exhausted all paths — fire failure telemetry.
@@ -989,6 +1043,10 @@ class Router:
                     # Success! Update state to reflect which model succeeded
                     self._last_model_id = candidate_model
 
+                    # Capture prompt-cache hit info from the provider response so
+                    # downstream outcome reports can carry it. Fails open.
+                    cache_hit, cache_tokens = _extract_cache_info(response)
+
                     # Gate 2: LLM-as-a-judge (optional, runs if judge_model configured)
                     if self.judge_model and not self._outcome_reported:
                         try:
@@ -1012,7 +1070,15 @@ class Router:
                                         repair_score = self._run_judge(repair_output, repaired_messages)
                                         if repair_score >= self.judge_threshold:
                                             logger.info(f"Prompt repair succeeded (score={repair_score:.2f})")
-                                            self.report(success=True, score=repair_score, pipeline_id=pipeline_id)
+                                            # Re-extract cache info from the repaired response
+                                            cache_hit, cache_tokens = _extract_cache_info(repair_response)
+                                            self.report(
+                                                success=True,
+                                                score=repair_score,
+                                                pipeline_id=pipeline_id,
+                                                cache_hit=cache_hit,
+                                                cache_tokens=cache_tokens,
+                                            )
                                             self._outcome_reported = True
                                             response = repair_response
                                             # Skip to return — fall through to response return below
@@ -1058,7 +1124,13 @@ class Router:
                                         pass
                                     continue
                             else:
-                                self.report(success=True, score=judge_score, pipeline_id=pipeline_id)
+                                self.report(
+                                    success=True,
+                                    score=judge_score,
+                                    pipeline_id=pipeline_id,
+                                    cache_hit=cache_hit,
+                                    cache_tokens=cache_tokens,
+                                )
                                 self._outcome_reported = True
                         except Exception as e:
                             logger.warning(f"Gate 2 judge failed (non-blocking): {e}")
@@ -1072,15 +1144,32 @@ class Router:
                                 # Priority 1: User-provided continuous scorer
                                 score = self.score_when(output)
                                 score = min(1.0, max(0.0, float(score)))
-                                self.report(success=score >= 0.5, score=score, pipeline_id=pipeline_id)
+                                self.report(
+                                    success=score >= 0.5,
+                                    score=score,
+                                    pipeline_id=pipeline_id,
+                                    cache_hit=cache_hit,
+                                    cache_tokens=cache_tokens,
+                                )
                             elif self.success_when:
                                 # Priority 2: User-provided binary scorer
                                 success = self.success_when(output)
-                                self.report(success=success, pipeline_id=pipeline_id)
+                                self.report(
+                                    success=success,
+                                    pipeline_id=pipeline_id,
+                                    cache_hit=cache_hit,
+                                    cache_tokens=cache_tokens,
+                                )
                             else:
                                 # Priority 3: Default heuristic scoring (zero-config)
                                 score = self._default_score(response)
-                                self.report(success=score >= 0.5, score=score, pipeline_id=pipeline_id)
+                                self.report(
+                                    success=score >= 0.5,
+                                    score=score,
+                                    pipeline_id=pipeline_id,
+                                    cache_hit=cache_hit,
+                                    cache_tokens=cache_tokens,
+                                )
                         except Exception as e:
                             logger.warning(f"Auto-outcome evaluation failed: {e}")
 
@@ -1098,13 +1187,23 @@ class Router:
                     if should_auto_fire:
                         threading.Thread(
                             target=_auto_report_outcome,
-                            args=(trace_id, self.goal, True, pipeline_id, candidate_model),
+                            kwargs={
+                                "trace_id": trace_id,
+                                "goal": self.goal,
+                                "success": True,
+                                "pipeline_id": pipeline_id,
+                                "model_id": candidate_model,
+                                "cache_hit": cache_hit,
+                                "cache_tokens": cache_tokens,
+                            },
                             daemon=True,
                         ).start()
 
                     # Add trace_id to response for explicit linkage
                     response.kalibr_trace_id = trace_id
                     response.kalibr_model_used = candidate_model
+                    response.kalibr_cache_hit = cache_hit
+                    response.kalibr_cache_tokens = cache_tokens
                     return response
 
                 except Exception as e:
@@ -1541,6 +1640,8 @@ class Router:
         trace_id: Optional[str] = None,
         failure_category: Optional[str] = None,
         pipeline_id: Optional[str] = None,
+        cache_hit: Optional[bool] = None,
+        cache_tokens: int = 0,
     ):
         """
         Report outcome for the last completion.
@@ -1556,6 +1657,13 @@ class Router:
             trace_id: Optional explicit trace ID (uses last completion's trace_id if not provided)
             failure_category: Optional structured failure category for clustering
             pipeline_id: Optional pipeline identifier for multi-pipeline isolation
+            cache_hit: Optional prompt-cache hit flag captured from the provider
+                response. ``None`` means the provider did not report a cache
+                field. Reported to the intelligence service so future routing
+                can prefer cache-warm providers.
+            cache_tokens: Number of tokens served from the provider's prompt
+                cache on this call. 0 when there was no hit or the field was
+                not reported.
         """
         if self._outcome_reported:
             logger.warning("Outcome already reported for this completion. Each completion() requires a separate report() call.")
@@ -1585,6 +1693,8 @@ class Router:
                 failure_category=failure_category,
                 model_id=self._last_model_id,
                 pipeline_id=pipeline_id,
+                cache_hit=cache_hit,
+                cache_tokens=cache_tokens,
             )
             self._outcome_reported = True
         except Exception as e:
@@ -2130,6 +2240,11 @@ class Router:
         if response.content:
             content = response.content[0].text if hasattr(response.content[0], "text") else str(response.content[0])
 
+        # Preserve Anthropic prompt-cache fields on the normalized usage object so
+        # downstream cache-hit extraction works after the conversion.
+        cache_read = getattr(response.usage, "cache_read_input_tokens", None)
+        cache_creation = getattr(response.usage, "cache_creation_input_tokens", None)
+
         return SimpleNamespace(
             id=response.id,
             model=model,
@@ -2147,6 +2262,8 @@ class Router:
                 prompt_tokens=response.usage.input_tokens,
                 completion_tokens=response.usage.output_tokens,
                 total_tokens=response.usage.input_tokens + response.usage.output_tokens,
+                cache_read_input_tokens=cache_read,
+                cache_creation_input_tokens=cache_creation,
             ),
         )
 

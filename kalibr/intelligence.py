@@ -187,6 +187,8 @@ class KalibrIntelligence:
         execution_params: dict | None = None,
         model_id: str | None = None,
         pipeline_id: str | None = None,
+        cache_hit: bool | None = None,
+        cache_tokens: int = 0,
     ) -> dict[str, Any]:
         """Report execution outcome for a goal.
 
@@ -251,6 +253,9 @@ class KalibrIntelligence:
         }
         if pipeline_id is not None:
             payload["pipeline_id"] = pipeline_id
+        if cache_hit is not None:
+            payload["cache_hit"] = cache_hit
+            payload["cache_tokens"] = int(cache_tokens or 0)
 
         response = self._request(
             "POST",
